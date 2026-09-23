@@ -91,6 +91,29 @@ button, input, select { font: inherit; color: inherit; }
 .linkbtn { border: 0; background: none; padding: 0; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .linkbtn:hover { color: var(--ink); }
 
+/* ---------- Orbe micro ---------- */
+.orb { position: relative; display: grid; place-items: center; width: min(320px, 78vw); aspect-ratio: 1; }
+
+.orb-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48.75%;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 50%;
+  background: var(--signal);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.orb-btn svg { width: 38%; height: 38%; }
+.orb-btn[data-phase='listening'] { background: var(--rec); }
+.orb-btn[data-phase='thinking'] { background: var(--wait); cursor: progress; }
+.orb-btn:active:not(:disabled) { transform: scale(0.97); }
+.orb-btn:disabled { cursor: not-allowed; }
+.orb-btn:disabled:not([data-phase='thinking']) { background: var(--rule); color: var(--muted); }
+
 /* ---------- Conversation ---------- */
 .log { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .log-head { display: flex; align-items: baseline; justify-content: space-between; padding: 24px 28px 12px; }
