@@ -3,8 +3,10 @@ import random
 import threading
 from datetime import datetime
 
+import requests
+
 import notifier
-from config import NOTES_FILE
+from config import DEFAULT_CITY, NOTES_FILE
 from router import QuitAssistant, skill
 
 JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
@@ -40,6 +42,25 @@ def timer(m):
     t.daemon = True
     t.start()
     return f"Minuteur de {n} {unit}{'s' if n > 1 else ''} lancé."
+
+
+@skill(r"météo(?:\s+(?:à|a|de|pour|en))?\s*(.*)", r"quel temps (?:fait-il|il fait)(?:\s+(?:à|a|de|en))?\s*(.*)",
+       r"weather(?:\s+in)?\s*(.*)")
+def weather(m):
+    city = (m.group(1) or "").strip() or DEFAULT_CITY
+    try:
+        g = requests.get("https://geocoding-api.open-meteo.com/v1/search",
+                         params={"name": city, "count": 1, "language": "fr"}, timeout=8).json()
+        if not g.get("results"):
+            return f"Je ne trouve pas la ville {city}."
+        r = g["results"][0]
+        w = requests.get("https://api.open-meteo.com/v1/forecast",
+                         params={"latitude": r["latitude"], "longitude": r["longitude"],
+                                 "current": "temperature_2m,wind_speed_10m"}, timeout=8).json()["current"]
+        return (f"À {r['name']}, il fait {round(w['temperature_2m'])} degrés "
+                f"avec un vent de {round(w['wind_speed_10m'])} kilomètres par heure.")
+    except requests.RequestException:
+        return "Impossible de récupérer la météo, vérifie ta connexion."
 
 
 @skill(r"\b(?:prends? (?:une )?note|note[- ]moi|take a note)\b\s*(?:que|:)?\s*(.+)")
