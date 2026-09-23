@@ -1,7 +1,10 @@
 """Toutes les commandes vocales. Pour en ajouter une : @skill(regex) + une fonction qui retourne un texte."""
 import random
+import re
 import threading
+import webbrowser
 from datetime import datetime
+from urllib.parse import quote_plus
 
 import requests
 
@@ -68,6 +71,19 @@ def note(m):
     with open(NOTES_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{datetime.now():%Y-%m-%d %H:%M}] {m.group(1)}\n")
     return "Note enregistrée."
+
+
+@skill(r"(?:joue|mets|play|cherche|recherche)\s+(.+?)\s+sur youtube", r"(?:joue|mets|play)\s+(.+)")
+def youtube(m):
+    webbrowser.open(f"https://www.youtube.com/results?search_query={quote_plus(m.group(1))}")
+    return f"Je cherche {m.group(1)} sur YouTube."
+
+
+@skill(r"(?:cherche|recherche|search|google)\s+(.+)")
+def search(m):
+    q = re.sub(r"\s+sur google$", "", m.group(1))
+    webbrowser.open(f"https://www.google.com/search?q={quote_plus(q)}")
+    return f"Voici les résultats pour {q}."
 
 
 @skill(r"quelle heure|l'heure|what time")
