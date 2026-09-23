@@ -1,5 +1,6 @@
 """Routeur de commandes : un décorateur @skill(regex) enregistre une action."""
 import re
+from llm import ask_llm
 
 
 class QuitAssistant(Exception):
@@ -30,4 +31,4 @@ def dispatch(text: str) -> str:
             m = p.search(text)
             if m:
                 return fn(m)
-    return "Je n'ai pas compris. Dis « aide » pour voir ce que je sais faire."
+    return ask_llm(text) or "Je n'ai pas compris. Dis « aide » pour voir ce que je sais faire."
