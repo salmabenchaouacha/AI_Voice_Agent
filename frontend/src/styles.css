@@ -63,6 +63,14 @@ button, input, select { font: inherit; color: inherit; }
   padding: 24px 0;
   text-align: center;
 }
+.status {
+  margin: 0;
+  min-height: 1.25em;
+  font-family: var(--serif);
+  font-size: clamp(26px, 3.4vw, 36px);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
 
 .error {
   display: flex;
@@ -90,6 +98,29 @@ button, input, select { font: inherit; color: inherit; }
 
 .linkbtn { border: 0; background: none; padding: 0; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .linkbtn:hover { color: var(--ink); }
+
+/* ---------- Orbe micro ---------- */
+.orb { position: relative; display: grid; place-items: center; width: min(320px, 78vw); aspect-ratio: 1; }
+.orb canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.orb-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48.75%;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 50%;
+  background: var(--signal);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.orb-btn svg { width: 38%; height: 38%; }
+.orb-btn[data-phase='listening'] { background: var(--rec); }
+.orb-btn[data-phase='thinking'] { background: var(--wait); cursor: progress; }
+.orb-btn:active:not(:disabled) { transform: scale(0.97); }
+.orb-btn:disabled { cursor: not-allowed; }
+.orb-btn:disabled:not([data-phase='thinking']) { background: var(--rule); color: var(--muted); }
 
 /* ---------- Conversation ---------- */
 .log { flex: 1; min-height: 0; display: flex; flex-direction: column; }
