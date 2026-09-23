@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 import requests
 
 import notifier
+import system
 from config import DEFAULT_CITY, NOTES_FILE
 from router import QuitAssistant, skill
 
@@ -77,6 +78,11 @@ def note(m):
 def youtube(m):
     webbrowser.open(f"https://www.youtube.com/results?search_query={quote_plus(m.group(1))}")
     return f"Je cherche {m.group(1)} sur YouTube."
+
+
+@skill(r"(?:ouvre|ouvrir|lance|démarre|open)\s+(.+)")
+def open_app(m):
+    return system.open_target(m.group(1))
 
 
 @skill(r"(?:cherche|recherche|search|google)\s+(.+)")
