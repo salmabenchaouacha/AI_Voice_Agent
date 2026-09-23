@@ -1,8 +1,10 @@
 """Intégration système (Windows / macOS / Linux)."""
+import os
 import platform
 import re
 import subprocess
 import webbrowser
+from datetime import datetime
 
 OS = platform.system()  # "Windows", "Darwin", "Linux"
 
@@ -66,3 +68,19 @@ def volume(delta: int) -> None:
         args = (["set-sink-mute", "@DEFAULT_SINK@", "toggle"] if delta == 0 else
                 ["set-sink-volume", "@DEFAULT_SINK@", f"{'+' if delta > 0 else '-'}10%"])
         subprocess.run(["pactl", *args])
+
+
+def screenshot() -> str:
+    import pyautogui
+    path = os.path.expanduser(f"~/capture_{datetime.now():%Y%m%d_%H%M%S}.png")
+    pyautogui.screenshot(path)
+    return path
+
+
+def lock_screen() -> None:
+    cmd = {
+        "Windows": ["rundll32.exe", "user32.dll,LockWorkStation"],
+        "Darwin": ["pmset", "displaysleepnow"],
+        "Linux": ["loginctl", "lock-session"],
+    }[OS]
+    subprocess.run(cmd)

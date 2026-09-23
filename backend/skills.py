@@ -66,6 +66,17 @@ def mute(m):
     return "C'est fait."
 
 
+@skill(r"capture d'écran|screenshot")
+def shot(m):
+    return f"Capture enregistrée : {system.screenshot()}"
+
+
+@skill(r"verrouille|lock (?:the )?screen")
+def lock(m):
+    system.lock_screen()
+    return "Écran verrouillé."
+
+
 @skill(r"météo(?:\s+(?:à|a|de|pour|en))?\s*(.*)", r"quel temps (?:fait-il|il fait)(?:\s+(?:à|a|de|en))?\s*(.*)",
        r"weather(?:\s+in)?\s*(.*)")
 def weather(m):
