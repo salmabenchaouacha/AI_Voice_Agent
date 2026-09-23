@@ -1,8 +1,12 @@
-"""API de l'assistant vocal : exécute une commande texte sur cette machine."""
+"""API + WebSocket de l'assistant vocal.
+
+Le navigateur envoie de l'audio (ou du texte) sur /ws ; le serveur transcrit avec Whisper,
+exécute la commande sur CETTE machine et renvoie la réponse en JSON."""
 import asyncio
+import json
 import os
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -61,3 +65,26 @@ async def post_command(cmd: Command):
     if not text:
         raise HTTPException(status_code=400, detail="Commande vide")
     return {"heard": text, "reply": await asyncio.to_thread(run_command, text)}
+
+
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    if not origin_ok(ws.headers.get("origin")):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg["type"] == "websocket.disconnect":
+                break
+            if not msg.get("text"):
+                continue
+            try:
+                heard = str(json.loads(msg["text"]).get("text", "")).strip()[:MAX_TEXT_CHARS]
+            except (ValueError, AttributeError):
+                heard = ""
+            reply = await asyncio.to_thread(run_command, heard) if heard else "Je n'ai rien compris. Réessaie."
+            await ws.send_json({"type": "result", "source": "text", "heard": heard, "reply": reply})
+    except WebSocketDisconnect:
+        pass
