@@ -3,6 +3,7 @@ import Composer from './components/Composer.jsx';
 import History from './components/History.jsx';
 import MicButton from './components/MicButton.jsx';
 import { useAssistant } from './hooks/useAssistant.js';
+import { useSpeech } from './hooks/useSpeech.js';
 
 const LOCALES = { fr: 'fr-FR', en: 'en-US', ar: 'ar-SA' };
 
@@ -22,13 +23,12 @@ const STATUS = {
   speaking: 'Je parle…',
 };
 
-const noop = () => {};
-
 export default function App() {
   const [lang, setLang] = useState('fr');
   const locale = LOCALES[lang] || 'fr-FR';
 
-  const a = useAssistant({ speak: noop, stopSpeaking: noop });
+  const speech = useSpeech(locale);
+  const a = useAssistant({ speak: speech.speak, stopSpeaking: speech.stop });
 
   useEffect(() => {
     fetch('/api/config')
@@ -37,9 +37,12 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  const phase = a.status;
+  const phase = a.status === 'idle' && speech.speaking ? 'speaking' : a.status;
 
-  const onMicClick = () => a.toggleListening();
+  const onMicClick = () => {
+    if (phase === 'speaking') speech.stop();
+    else a.toggleListening();
+  };
 
   const busy = a.status !== 'idle';
 
@@ -78,6 +81,26 @@ export default function App() {
             ))}
           </div>
         </div>
+
+        {speech.supported && (
+          <footer className="voice">
+            <button type="button" role="switch" aria-checked={speech.enabled} className="switch" onClick={speech.toggle}>
+              <span className="track" aria-hidden="true" />
+              Réponses vocales
+            </button>
+            {speech.voices.length > 1 && (
+              <select
+                aria-label="Voix de l'assistant"
+                value={speech.voice?.voiceURI || ''}
+                onChange={(e) => speech.chooseVoice(e.target.value)}
+              >
+                {speech.voices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
+                ))}
+              </select>
+            )}
+          </footer>
+        )}
       </main>
 
       <aside className="side">
