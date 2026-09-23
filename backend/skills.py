@@ -132,6 +132,15 @@ def date_(m):
     return f"Nous sommes le {JOURS[d.weekday()]} {d.day} {MOIS[d.month - 1]} {d.year}."
 
 
+@skill(r"batterie|battery")
+def battery(m):
+    import psutil
+    b = psutil.sensors_battery()
+    if not b:
+        return "Je ne détecte pas de batterie."
+    return f"La batterie est à {round(b.percent)} pourcent{', en charge' if b.power_plugged else ''}."
+
+
 @skill(r"blague|joke|fais[- ]moi rire")
 def joke(m):
     return random.choice(BLAGUES)
