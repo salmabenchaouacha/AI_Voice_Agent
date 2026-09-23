@@ -44,6 +44,23 @@ export default function App() {
     else a.toggleListening();
   };
 
+  // Raccourcis : Espace = parler / arrêter, Échap = annuler
+  useEffect(() => {
+    const onKey = (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        if (speech.speaking) speech.stop();
+        else a.toggleListening();
+      } else if (e.key === 'Escape') {
+        a.cancelListening();
+        speech.stop();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [a.toggleListening, a.cancelListening, speech.speaking, speech.stop]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const busy = a.status !== 'idle';
 
   return (
@@ -65,6 +82,7 @@ export default function App() {
             onClick={onMicClick}
           />
           <p className="status" aria-live="polite">{a.connected ? STATUS[phase] : 'Serveur injoignable'}</p>
+          <p className="hint">Espace pour parler ou arrêter, Échap pour annuler</p>
 
           {a.error && (
             <p className="error" role="alert">

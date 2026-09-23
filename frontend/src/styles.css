@@ -71,7 +71,7 @@ button, input, select { font: inherit; color: inherit; }
   line-height: 1.2;
   letter-spacing: -0.01em;
 }
-
+.hint { margin: 0; color: var(--muted); font-size: 14px; }
 .error {
   display: flex;
   gap: 12px;
@@ -168,3 +168,16 @@ button, input, select { font: inherit; color: inherit; }
 .composer input::placeholder { color: var(--muted); }
 .composer button { padding: 10px 16px; border: 0; border-radius: 10px; background: var(--signal); color: #fff; font-weight: 500; cursor: pointer; }
 .composer button:disabled { background: var(--rule); color: var(--muted); cursor: not-allowed; }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .stage { min-height: auto; padding-bottom: 20px; }
+  .side { position: static; height: 75dvh; border-left: 0; border-top: 1px solid var(--rule); }
+  .log-head, .log-scroll { padding-left: 20px; padding-right: 20px; }
+  .composer { padding: 12px 20px 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
