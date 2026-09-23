@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import notifier
 import skills  # noqa: F401  (enregistre les commandes)
 from config import LANGUAGE
 from router import QuitAssistant, dispatch
@@ -97,6 +98,15 @@ async def ws_endpoint(ws: WebSocket):
         await ws.close(code=1008)
         return
     await ws.accept()
+
+    queue: asyncio.Queue = asyncio.Queue()
+    unsubscribe = notifier.subscribe(asyncio.get_running_loop(), queue)
+
+    async def forward_notifications():
+        while True:
+            await ws.send_json({"type": "notification", "text": await queue.get()})
+
+    pump = asyncio.create_task(forward_notifications())
     try:
         while True:
             msg = await ws.receive()
@@ -122,6 +132,9 @@ async def ws_endpoint(ws: WebSocket):
             await ws.send_json({"type": "result", "source": source, "heard": heard, "reply": reply})
     except WebSocketDisconnect:
         pass
+    finally:
+        pump.cancel()
+        unsubscribe()
 
 
 # Version « production » : après `npm run build`, FastAPI sert aussi le front sur le port 8000
