@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+faster-whisper
+requests
+pyautogui
+psutil
+anthropic   # optionnel : réponses "intelligentes" quand aucune commande ne correspond
