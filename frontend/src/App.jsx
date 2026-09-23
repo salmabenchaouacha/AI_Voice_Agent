@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Composer from './components/Composer.jsx';
 import History from './components/History.jsx';
+import MicButton from './components/MicButton.jsx';
 import { useAssistant } from './hooks/useAssistant.js';
 
 const LOCALES = { fr: 'fr-FR', en: 'en-US', ar: 'ar-SA' };
@@ -14,11 +15,19 @@ const SUGGESTIONS = [
   'Raconte-moi une blague',
 ];
 
+const STATUS = {
+  idle: 'Appuie sur le micro et parle',
+  listening: "J'écoute…",
+  thinking: 'Je réfléchis…',
+  speaking: 'Je parle…',
+};
+
 const noop = () => {};
 
 export default function App() {
   const [lang, setLang] = useState('fr');
   const locale = LOCALES[lang] || 'fr-FR';
+
   const a = useAssistant({ speak: noop, stopSpeaking: noop });
 
   useEffect(() => {
@@ -27,6 +36,10 @@ export default function App() {
       .then((c) => c.language && setLang(c.language))
       .catch(() => {});
   }, []);
+
+  const phase = a.status;
+
+  const onMicClick = () => a.toggleListening();
 
   const busy = a.status !== 'idle';
 
@@ -42,6 +55,14 @@ export default function App() {
         </header>
 
         <div className="stage-main">
+          <MicButton
+            phase={phase}
+            analyserRef={a.analyserRef}
+            disabled={!a.connected || phase === 'thinking'}
+            onClick={onMicClick}
+          />
+          <p className="status" aria-live="polite">{a.connected ? STATUS[phase] : 'Serveur injoignable'}</p>
+
           {a.error && (
             <p className="error" role="alert">
               {a.error}
