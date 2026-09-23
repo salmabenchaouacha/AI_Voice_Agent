@@ -7,9 +7,11 @@ import io
 import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import skills  # noqa: F401  (enregistre les commandes)
@@ -120,3 +122,14 @@ async def ws_endpoint(ws: WebSocket):
             await ws.send_json({"type": "result", "source": source, "heard": heard, "reply": reply})
     except WebSocketDisconnect:
         pass
+
+
+# Version « production » : après `npm run build`, FastAPI sert aussi le front sur le port 8000
+DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if DIST.exists():
+    app.mount("/", StaticFiles(directory=DIST, html=True), name="front")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("VA_PORT", "8000")))
