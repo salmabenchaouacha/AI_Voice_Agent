@@ -50,3 +50,19 @@ def open_target(name: str) -> str:
         if any(k in name for k in keys):
             return _launch(cmds[OS], keys[0])
     return _launch(name, name)
+
+
+def volume(delta: int) -> None:
+    """delta : +1 monter, -1 baisser, 0 couper/rétablir le son."""
+    if OS == "Windows":
+        import pyautogui
+        key = "volumemute" if delta == 0 else "volumeup" if delta > 0 else "volumedown"
+        pyautogui.press(key, presses=1 if delta == 0 else 5)
+    elif OS == "Darwin":
+        script = ("set volume output muted true" if delta == 0 else
+                  f"set volume output volume ((output volume of (get volume settings)) + {10 * delta})")
+        subprocess.run(["osascript", "-e", script])
+    else:
+        args = (["set-sink-mute", "@DEFAULT_SINK@", "toggle"] if delta == 0 else
+                ["set-sink-volume", "@DEFAULT_SINK@", f"{'+' if delta > 0 else '-'}10%"])
+        subprocess.run(["pactl", *args])

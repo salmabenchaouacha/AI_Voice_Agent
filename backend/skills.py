@@ -48,6 +48,24 @@ def timer(m):
     return f"Minuteur de {n} {unit}{'s' if n > 1 else ''} lancé."
 
 
+@skill(r"(?:monte|augmente|plus fort).*(?:volume|son)|volume (?:plus fort|up)")
+def vol_up(m):
+    system.volume(+1)
+    return "Volume augmenté."
+
+
+@skill(r"(?:baisse|diminue).*(?:volume|son)|volume (?:moins fort|down)")
+def vol_down(m):
+    system.volume(-1)
+    return "Volume baissé."
+
+
+@skill(r"\b(?:coupe|mute|muet|rétablis)\b.*(?:son|volume)?")
+def mute(m):
+    system.volume(0)
+    return "C'est fait."
+
+
 @skill(r"météo(?:\s+(?:à|a|de|pour|en))?\s*(.*)", r"quel temps (?:fait-il|il fait)(?:\s+(?:à|a|de|en))?\s*(.*)",
        r"weather(?:\s+in)?\s*(.*)")
 def weather(m):
