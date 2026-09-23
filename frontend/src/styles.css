@@ -1,0 +1,26 @@
+:root {
+  --paper: #ecf1f6;
+  --surface: #f9fbfd;
+  --ink: #0f1b2d;
+  --muted: #5a6a7e;
+  --rule: #c8d3df;
+  --signal: #1f4fd8;   /* bleu : prêt / réponse */
+  --rec: #e4472b;      /* rouge : enregistrement en cours */
+  --wait: #6f86ae;     /* gris-bleu : traitement */
+  --ok: #1e9e6a;
+  --danger: #b3341c;
+  --serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --sans: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
