@@ -144,3 +144,10 @@ def battery(m):
 @skill(r"blague|joke|fais[- ]moi rire")
 def joke(m):
     return random.choice(BLAGUES)
+
+
+@skill(r"\baide\b|\bhelp\b|que peux[- ]tu faire")
+def help_(m):
+    return ("Je peux donner l'heure et la date, la météo, ouvrir une application ou un site, "
+            "chercher sur Google ou YouTube, régler le volume, lancer un minuteur, prendre une note, "
+            "faire une capture d'écran, verrouiller l'écran, ou te raconter une blague.")
