@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 import requests
 
 import notifier
+import system
 from config import DEFAULT_CITY, NOTES_FILE
 from router import QuitAssistant, skill
 
@@ -47,6 +48,35 @@ def timer(m):
     return f"Minuteur de {n} {unit}{'s' if n > 1 else ''} lancé."
 
 
+@skill(r"(?:monte|augmente|plus fort).*(?:volume|son)|volume (?:plus fort|up)")
+def vol_up(m):
+    system.volume(+1)
+    return "Volume augmenté."
+
+
+@skill(r"(?:baisse|diminue).*(?:volume|son)|volume (?:moins fort|down)")
+def vol_down(m):
+    system.volume(-1)
+    return "Volume baissé."
+
+
+@skill(r"\b(?:coupe|mute|muet|rétablis)\b.*(?:son|volume)?")
+def mute(m):
+    system.volume(0)
+    return "C'est fait."
+
+
+@skill(r"capture d'écran|screenshot")
+def shot(m):
+    return f"Capture enregistrée : {system.screenshot()}"
+
+
+@skill(r"verrouille|lock (?:the )?screen")
+def lock(m):
+    system.lock_screen()
+    return "Écran verrouillé."
+
+
 @skill(r"météo(?:\s+(?:à|a|de|pour|en))?\s*(.*)", r"quel temps (?:fait-il|il fait)(?:\s+(?:à|a|de|en))?\s*(.*)",
        r"weather(?:\s+in)?\s*(.*)")
 def weather(m):
@@ -79,6 +109,11 @@ def youtube(m):
     return f"Je cherche {m.group(1)} sur YouTube."
 
 
+@skill(r"(?:ouvre|ouvrir|lance|démarre|open)\s+(.+)")
+def open_app(m):
+    return system.open_target(m.group(1))
+
+
 @skill(r"(?:cherche|recherche|search|google)\s+(.+)")
 def search(m):
     q = re.sub(r"\s+sur google$", "", m.group(1))
@@ -97,6 +132,22 @@ def date_(m):
     return f"Nous sommes le {JOURS[d.weekday()]} {d.day} {MOIS[d.month - 1]} {d.year}."
 
 
+@skill(r"batterie|battery")
+def battery(m):
+    import psutil
+    b = psutil.sensors_battery()
+    if not b:
+        return "Je ne détecte pas de batterie."
+    return f"La batterie est à {round(b.percent)} pourcent{', en charge' if b.power_plugged else ''}."
+
+
 @skill(r"blague|joke|fais[- ]moi rire")
 def joke(m):
     return random.choice(BLAGUES)
+
+
+@skill(r"\baide\b|\bhelp\b|que peux[- ]tu faire")
+def help_(m):
+    return ("Je peux donner l'heure et la date, la météo, ouvrir une application ou un site, "
+            "chercher sur Google ou YouTube, régler le volume, lancer un minuteur, prendre une note, "
+            "faire une capture d'écran, verrouiller l'écran, ou te raconter une blague.")
