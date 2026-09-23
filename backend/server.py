@@ -3,8 +3,10 @@
 Le navigateur envoie de l'audio (ou du texte) sur /ws ; le serveur transcrit avec Whisper,
 exécute la commande sur CETTE machine et renvoie la réponse en JSON."""
 import asyncio
+import io
 import json
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,7 @@ ALLOWED_ORIGINS = set(os.getenv(
     "VA_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000",
 ).split(","))
+MAX_AUDIO_BYTES = 10 * 1024 * 1024
 MAX_TEXT_CHARS = 500
 
 
@@ -32,7 +35,17 @@ def require_origin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Origine non autorisée")
 
 
-app = FastAPI(title="Assistant vocal")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.getenv("VA_PRELOAD", "1") == "1":
+        print("Chargement du modèle Whisper (au premier lancement, il est téléchargé)…")
+        from stt import load
+        await asyncio.to_thread(load)
+        print("Modèle prêt.")
+    yield
+
+
+app = FastAPI(title="Assistant vocal", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(ALLOWED_ORIGINS),
@@ -48,6 +61,15 @@ def run_command(text: str) -> str:
         return str(e)
     except Exception as e:  # une commande qui plante ne doit pas tuer le serveur
         return f"Une erreur est survenue : {e}"
+
+
+def transcribe_bytes(data: bytes) -> str:
+    try:
+        from stt import transcribe
+        return transcribe(io.BytesIO(data))
+    except Exception as e:
+        print(f"Erreur de transcription : {e}")
+        return ""
 
 
 class Command(BaseModel):
@@ -78,13 +100,23 @@ async def ws_endpoint(ws: WebSocket):
             msg = await ws.receive()
             if msg["type"] == "websocket.disconnect":
                 break
-            if not msg.get("text"):
+
+            if msg.get("bytes") is not None:                       # audio du micro
+                source, data = "voice", msg["bytes"]
+                if len(data) > MAX_AUDIO_BYTES:
+                    heard = ""
+                else:
+                    heard = await asyncio.to_thread(transcribe_bytes, data)
+            elif msg.get("text"):                                  # commande tapée
+                source = "text"
+                try:
+                    heard = str(json.loads(msg["text"]).get("text", "")).strip()[:MAX_TEXT_CHARS]
+                except (ValueError, AttributeError):
+                    heard = ""
+            else:
                 continue
-            try:
-                heard = str(json.loads(msg["text"]).get("text", "")).strip()[:MAX_TEXT_CHARS]
-            except (ValueError, AttributeError):
-                heard = ""
+
             reply = await asyncio.to_thread(run_command, heard) if heard else "Je n'ai rien compris. Réessaie."
-            await ws.send_json({"type": "result", "source": "text", "heard": heard, "reply": reply})
+            await ws.send_json({"type": "result", "source": source, "heard": heard, "reply": reply})
     except WebSocketDisconnect:
         pass
