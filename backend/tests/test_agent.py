@@ -152,7 +152,7 @@ def test_les_faits_retenus_sont_dans_le_prompt_systeme():
 
 # ---------- robustesse ----------
 def test_boucle_d_outils_arretee():
-    agent, _, journal = creer([ai("", ("get_weather", {}))] * 5, max_steps=2)
+    agent, _, journal = creer([ai("", ("get_weather", {})) for _ in range(5)], max_steps=2)
     (r,) = jouer(agent, "météo en boucle")
     assert r.reply == TOO_MANY_STEPS and len(journal) == 2
 
