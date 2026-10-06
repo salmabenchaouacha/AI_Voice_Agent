@@ -1,21 +1,19 @@
-"""Toutes les commandes vocales. Pour en ajouter une : @skill(regex) + une fonction qui retourne un texte."""
+"""Mode hors-ligne : des regex reconnaissent la commande et extraient ses arguments.
+
+La logique elle-même est dans actions.py, partagée avec l'agent. Ce fichier sert quand aucun LLM
+n'est configuré (ou injoignable). Pour ajouter une commande : @skill(regex) + une fonction qui retourne un texte."""
 import random
 import re
-import threading
-import webbrowser
-from datetime import datetime
-from urllib.parse import quote_plus
+import threading  # noqa: F401  (les tests remplacent skills.threading.Timer)
+import webbrowser  # noqa: F401  (les tests remplacent skills.webbrowser.open)
 
-import requests
+import requests  # noqa: F401  (les tests remplacent skills.requests.get)
 
-import notifier
+import actions
 import system
-from config import DEFAULT_CITY, NOTES_FILE
+from config import DEFAULT_CITY, NOTES_FILE  # noqa: F401
 from router import QuitAssistant, skill
 
-JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
-MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
-        "septembre", "octobre", "novembre", "décembre"]
 NUMS = {"un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7,
         "huit": 8, "neuf": 9, "dix": 10, "quinze": 15, "vingt": 20, "trente": 30, "quarante": 40,
         "cinquante": 50, "soixante": 60}
@@ -40,12 +38,7 @@ def timer(m):
     n = _to_int(m.group(1))
     if not n:
         return "Je n'ai pas compris la durée."
-    unit = m.group(2)
-    secs = n * {"seconde": 1, "minute": 60, "heure": 3600}[unit]
-    t = threading.Timer(secs, lambda: notifier.push("Ton minuteur est terminé !"))
-    t.daemon = True
-    t.start()
-    return f"Minuteur de {n} {unit}{'s' if n > 1 else ''} lancé."
+    return actions.start_timer(n * {"seconde": 1, "minute": 60, "heure": 3600}[m.group(2)])
 
 
 @skill(r"(?:monte|augmente|plus fort).*(?:volume|son)|volume (?:plus fort|up)")
@@ -80,33 +73,17 @@ def lock(m):
 @skill(r"météo(?:\s+(?:à|a|de|pour|en))?\s*(.*)", r"quel temps (?:fait-il|il fait)(?:\s+(?:à|a|de|en))?\s*(.*)",
        r"weather(?:\s+in)?\s*(.*)")
 def weather(m):
-    city = (m.group(1) or "").strip() or DEFAULT_CITY
-    try:
-        g = requests.get("https://geocoding-api.open-meteo.com/v1/search",
-                         params={"name": city, "count": 1, "language": "fr"}, timeout=8).json()
-        if not g.get("results"):
-            return f"Je ne trouve pas la ville {city}."
-        r = g["results"][0]
-        w = requests.get("https://api.open-meteo.com/v1/forecast",
-                         params={"latitude": r["latitude"], "longitude": r["longitude"],
-                                 "current": "temperature_2m,wind_speed_10m"}, timeout=8).json()["current"]
-        return (f"À {r['name']}, il fait {round(w['temperature_2m'])} degrés "
-                f"avec un vent de {round(w['wind_speed_10m'])} kilomètres par heure.")
-    except requests.RequestException:
-        return "Impossible de récupérer la météo, vérifie ta connexion."
+    return actions.weather(m.group(1) or "")
 
 
 @skill(r"\b(?:prends? (?:une )?note|note[- ]moi|take a note)\b\s*(?:que|:)?\s*(.+)")
 def note(m):
-    with open(NOTES_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now():%Y-%m-%d %H:%M}] {m.group(1)}\n")
-    return "Note enregistrée."
+    return actions.add_note(m.group(1), path=NOTES_FILE)
 
 
 @skill(r"(?:joue|mets|play|cherche|recherche)\s+(.+?)\s+sur youtube", r"(?:joue|mets|play)\s+(.+)")
 def youtube(m):
-    webbrowser.open(f"https://www.youtube.com/results?search_query={quote_plus(m.group(1))}")
-    return f"Je cherche {m.group(1)} sur YouTube."
+    return actions.play_youtube(m.group(1))
 
 
 @skill(r"(?:ouvre|ouvrir|lance|démarre|open)\s+(.+)")
@@ -116,29 +93,22 @@ def open_app(m):
 
 @skill(r"(?:cherche|recherche|search|google)\s+(.+)")
 def search(m):
-    q = re.sub(r"\s+sur google$", "", m.group(1))
-    webbrowser.open(f"https://www.google.com/search?q={quote_plus(q)}")
-    return f"Voici les résultats pour {q}."
+    return actions.open_google(re.sub(r"\s+sur google$", "", m.group(1)))
 
 
 @skill(r"quelle heure|l'heure|what time")
 def time_(m):
-    return datetime.now().strftime("Il est %H heures %M.")
+    return actions.now_time()
 
 
 @skill(r"quel jour|quelle date|la date|what day")
 def date_(m):
-    d = datetime.now()
-    return f"Nous sommes le {JOURS[d.weekday()]} {d.day} {MOIS[d.month - 1]} {d.year}."
+    return actions.today_date()
 
 
 @skill(r"batterie|battery")
 def battery(m):
-    import psutil
-    b = psutil.sensors_battery()
-    if not b:
-        return "Je ne détecte pas de batterie."
-    return f"La batterie est à {round(b.percent)} pourcent{', en charge' if b.power_plugged else ''}."
+    return actions.battery()
 
 
 @skill(r"blague|joke|fais[- ]moi rire")

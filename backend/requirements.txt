@@ -1,7 +1,17 @@
+# Serveur et voix
 fastapi
 uvicorn[standard]
 faster-whisper
 requests
 pyautogui
 psutil
-anthropic   # optionnel : réponses "intelligentes" quand aucune commande ne correspond
+python-dotenv
+
+# Agent : graphe, modèle de langage, outils
+langgraph>=1.0
+langchain>=1.0
+langchain-anthropic        # fournisseur par défaut ; pour un autre : langchain-openai, langchain-google-genai, langchain-ollama…
+mcp>=2.0,<3                # SDK MCP officiel, API v2 (MCPServer, Client)
+ddgs                       # recherche web sans clé d'API
+
+anthropic                  # ancien repli du mode hors-ligne (llm.ask_llm)
