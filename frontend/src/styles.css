@@ -72,6 +72,18 @@ button, input, select { font: inherit; color: inherit; }
   letter-spacing: -0.01em;
 }
 .hint { margin: 0; color: var(--muted); font-size: 14px; }
+
+/* Mode actif (agent ou hors-ligne), à côté du titre */
+.mode { margin-left: 10px; padding: 2px 8px; border: 1px solid var(--rule); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0; vertical-align: middle; }
+.mode[data-mode='agent'] { border-color: var(--signal); color: var(--signal); }
+
+/* Question de l'agent avant une action sensible */
+.confirm { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.confirm .hint { flex-basis: 100%; }
+.confirm button { min-width: 96px; padding: 10px 18px; border: 1px solid var(--rule); border-radius: 10px; background: transparent; font-weight: 500; cursor: pointer; }
+.confirm .yes { border-color: var(--signal); background: var(--signal); color: #fff; }
+.confirm .no:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.confirm button:disabled { opacity: 0.45; cursor: not-allowed; }
 .error {
   display: flex;
   gap: 12px;
@@ -161,6 +173,8 @@ button, input, select { font: inherit; color: inherit; }
 .who-bot { color: var(--signal); font-weight: 500; }
 .you { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
 .bot { margin: 2px 0 0; font-family: var(--serif); font-size: 19px; line-height: 1.45; max-width: 46ch; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.tool { padding: 1px 8px; border: 1px solid var(--rule); border-radius: 999px; color: var(--muted); font-size: 12px; }
 .notice { margin: 0; padding-left: 10px; border-left: 2px solid var(--rec); color: var(--muted); font-size: 14px; }
 
 .composer { display: flex; gap: 8px; padding: 14px 28px 22px; border-top: 1px solid var(--rule); }
@@ -171,7 +185,7 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- Mobile ---------- */
 @media (max-width: 860px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); }   /* minmax(0, …) : la colonne ne déborde plus de l'écran */
   .stage { min-height: auto; padding-bottom: 20px; }
   .side { position: static; height: 75dvh; border-left: 0; border-top: 1px solid var(--rule); }
   .log-head, .log-scroll { padding-left: 20px; padding-right: 20px; }

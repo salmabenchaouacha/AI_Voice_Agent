@@ -16,6 +16,16 @@ const SUGGESTIONS = [
   'Raconte-moi une blague',
 ];
 
+// Proposées seulement quand l'agent est actif : plusieurs actions, mémoire, recherche lue, confirmation.
+const SUGGESTIONS_AGENT = [
+  'Quelle heure est-il ?',
+  'Météo à Sousse puis minuteur de 10 minutes',
+  'Note de réviser le RAG et relis mes notes',
+  'Cherche les nouveautés de LangGraph',
+  "Je m'appelle Salma, retiens-le",
+  "Verrouille l'écran",
+];
+
 const STATUS = {
   idle: 'Appuie sur le micro et parle',
   listening: "J'écoute…",
@@ -23,8 +33,12 @@ const STATUS = {
   speaking: 'Je parle…',
 };
 
+const MODES = { agent: 'Agent IA', offline: 'Mode hors-ligne' };
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
 export default function App() {
   const [lang, setLang] = useState('fr');
+  const [mode, setMode] = useState('');
   const locale = LOCALES[lang] || 'fr-FR';
 
   const speech = useSpeech(locale);
@@ -34,6 +48,10 @@ export default function App() {
     fetch('/api/config')
       .then((r) => r.json())
       .then((c) => c.language && setLang(c.language))
+      .catch(() => {});
+    fetch('/api/status')
+      .then((r) => r.json())
+      .then((s) => MODES[s.mode] && setMode(s.mode))
       .catch(() => {});
   }, []);
 
@@ -62,12 +80,16 @@ export default function App() {
   }, [a.toggleListening, a.cancelListening, speech.speaking, speech.stop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const busy = a.status !== 'idle';
+  const statusText = phase === 'thinking' && a.activity ? `${capitalize(a.activity)}…` : STATUS[phase];
 
   return (
     <div className="app">
       <main className="stage">
         <header className="bar">
-          <h1 className="brand">Assistant vocal</h1>
+          <h1 className="brand">
+            Assistant vocal
+            {mode && <span className="mode" data-mode={mode}>{MODES[mode]}</span>}
+          </h1>
           <span className="conn" data-ok={a.connected}>
             <span className="dot" aria-hidden="true" />
             {a.connected ? 'Connecté au serveur' : 'Serveur injoignable, reconnexion…'}
@@ -81,8 +103,16 @@ export default function App() {
             disabled={!a.connected || phase === 'thinking'}
             onClick={onMicClick}
           />
-          <p className="status" aria-live="polite">{a.connected ? STATUS[phase] : 'Serveur injoignable'}</p>
-          <p className="hint">Espace pour parler ou arrêter, Échap pour annuler</p>
+          <p className="status" aria-live="polite">{a.connected ? statusText : 'Serveur injoignable'}</p>
+          {a.pending && a.connected ? (
+            <div className="confirm" role="group" aria-label="Confirmer l'action">
+              <button type="button" className="yes" disabled={busy} onClick={() => a.sendText('oui')}>Oui</button>
+              <button type="button" className="no" disabled={busy} onClick={() => a.sendText('non')}>Non</button>
+              <p className="hint">Réponds oui ou non, à la voix ou avec ces boutons</p>
+            </div>
+          ) : (
+            <p className="hint">Espace pour parler ou arrêter, Échap pour annuler</p>
+          )}
 
           {a.error && (
             <p className="error" role="alert">
@@ -92,7 +122,7 @@ export default function App() {
           )}
 
           <div className="chips">
-            {SUGGESTIONS.map((s) => (
+            {(mode === 'agent' ? SUGGESTIONS_AGENT : SUGGESTIONS).map((s) => (
               <button key={s} type="button" className="chip" disabled={!a.connected || busy} onClick={() => a.sendText(s)}>
                 {s}
               </button>

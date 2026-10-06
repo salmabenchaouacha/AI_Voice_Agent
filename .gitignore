@@ -15,3 +15,6 @@ dist/
 
 # Local
 *.log
+.env
+backend/metrics.jsonl
+backend/eval/results.json

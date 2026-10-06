@@ -7,6 +7,7 @@ const MAX_RECORD_MS = 20000;
 const REPLY_TIMEOUT_MS = 60000;
 const HISTORY_KEY = 'va.history.v1';
 const HISTORY_MAX = 100;
+const SESSION_KEY = 'va.session';
 
 const ERR_SERVER = "Serveur injoignable. Lance « python server.py » dans le dossier backend, puis recharge la page.";
 const ERR_MIC_DENIED = "Micro refusé. Autorise le micro dans la barre d'adresse du navigateur, puis réessaie.";
@@ -19,6 +20,20 @@ function loadHistory() {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
 }
 
+// Identifiant de conversation : le serveur s'en sert pour retrouver la mémoire de l'agent après un rechargement.
+function sessionId() {
+  try {
+    let id = localStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = globalThis.crypto?.randomUUID?.() || `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return `s-${Date.now()}`;
+  }
+}
+
 function pickMime() {
   const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
   return candidates.find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || '';
@@ -29,12 +44,15 @@ function pickMime() {
  *  - WebSocket (reconnexion automatique)
  *  - enregistrement MediaRecorder avec arrêt automatique au silence
  *  - historique persistant
+ *  - suivi de l'agent : outil en cours d'appel (activity) et question en attente d'un oui / non (pending)
  */
 export function useAssistant({ speak, stopSpeaking }) {
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | listening | thinking
   const [messages, setMessages] = useState(loadHistory);
   const [error, setError] = useState('');
+  const [activity, setActivity] = useState('');   // nom court de l'outil que l'agent est en train d'appeler
+  const [pending, setPending] = useState(false);  // l'assistant attend un oui ou un non
 
   const wsRef = useRef(null);
   const analyserRef = useRef(null);   // lu par l'orbe pour l'animation
@@ -54,18 +72,27 @@ export function useAssistant({ speak, stopSpeaking }) {
     clearTimeout(replyTimer.current);
     replyTimer.current = setTimeout(() => {
       setStatus('idle');
+      setActivity('');
       setError('Le serveur met trop de temps à répondre. Vérifie le terminal du backend.');
     }, REPLY_TIMEOUT_MS);
   }, []);
 
   // Réception des messages serveur (fonction recréée à chaque rendu pour voir le dernier `speak`)
   handlerRef.current = (data) => {
-    if (data.type === 'result') {
+    if (data.type === 'result' || data.type === 'confirm') {
       clearTimeout(replyTimer.current);
       if (data.source === 'voice' && data.heard) add(mk('user', data.heard, { via: 'voice' }));
-      add(mk('assistant', data.reply));
+      const extra = {};
+      if (data.tools?.length) extra.tools = data.tools;
+      if (data.type === 'confirm') extra.confirm = true;
+      add(mk('assistant', data.reply, extra));
+      setPending(data.type === 'confirm');
+      setActivity('');
       setStatus('idle');
       speak(data.reply);
+    } else if (data.type === 'step') {
+      setActivity(data.label || data.tool || '');
+      if (statusRef.current === 'thinking') armReplyTimeout();   // l'agent travaille : on lui laisse du temps
     } else if (data.type === 'notification') {
       add(mk('notice', data.text));
       speak(data.text);
@@ -78,7 +105,7 @@ export function useAssistant({ speak, stopSpeaking }) {
     let retry;
     const connect = () => {
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${window.location.host}/ws`);
+      const ws = new WebSocket(`${proto}://${window.location.host}/ws?session=${encodeURIComponent(sessionId())}`);
       wsRef.current = ws;
       ws.onopen = () => { setConnected(true); setError((e) => (e === ERR_SERVER ? '' : e)); };
       ws.onmessage = (e) => {
@@ -89,6 +116,7 @@ export function useAssistant({ speak, stopSpeaking }) {
         if (statusRef.current === 'thinking') {
           clearTimeout(replyTimer.current);
           setStatus('idle');
+          setActivity('');
           setError('Connexion perdue pendant la réponse. Réessaie.');
         }
         if (!stopped) retry = setTimeout(connect, 1500);
@@ -199,11 +227,17 @@ export function useAssistant({ speak, stopSpeaking }) {
   }, [startListening]);
 
   const cancelListening = useCallback(() => sessionRef.current?.finish(true), []);
-  const clearHistory = useCallback(() => setMessages([]), []);
+  // Effacer l'historique ouvre aussi une nouvelle conversation côté agent : nouvel identifiant, nouvelle connexion.
+  const clearHistory = useCallback(() => {
+    setMessages([]);
+    setPending(false);
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* ignoré */ }
+    wsRef.current?.close();
+  }, []);
   const dismissError = useCallback(() => setError(''), []);
 
   return {
-    connected, status, messages, error, analyserRef,
+    connected, status, messages, error, analyserRef, activity, pending,
     sendText, toggleListening, cancelListening, clearHistory, dismissError,
   };
 }

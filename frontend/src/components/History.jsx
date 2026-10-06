@@ -21,7 +21,7 @@ export default function History({ messages, locale, onClear }) {
       <div className="log-scroll" ref={box} role="log" aria-live="polite">
         {messages.length === 0 && (
           <p className="empty">
-            Rien pour l'instant. Appuie sur le micro et dis par exemple « quelle heure est-il ? »,
+            Rien pour l'instant. Appuie sur le micro et dis par exemple « quel temps fait-il à Sousse ? »,
             ou touche une suggestion.
           </p>
         )}
@@ -38,6 +38,11 @@ export default function History({ messages, locale, onClear }) {
                   <time dateTime={m.time}>{time(m.time)}</time>
                 </div>
                 <p className={m.role === 'user' ? 'you' : 'bot'}>{m.text}</p>
+                {m.tools?.length > 0 && (
+                  <p className="tools" aria-label="Outils utilisés">
+                    {m.tools.map((t, i) => <span key={`${t}-${i}`} className="tool">{t}</span>)}
+                  </p>
+                )}
               </>
             )}
           </article>

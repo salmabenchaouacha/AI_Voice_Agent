@@ -104,6 +104,40 @@ describe('Assistant vocal', () => {
     expect(ws().sent.length).toBe(0);
   });
 
+  it("étape de l'agent : l'outil en cours remplace « Je réfléchis »", async () => {
+    await connect();
+    fireEvent.click(screen.getByText('Quelle heure est-il ?'));
+    act(() => ws().serverSays({ type: 'step', tool: 'get_weather', label: 'météo' }));
+    expect(screen.getByText('Météo…')).toBeTruthy();
+    act(() => ws().serverSays({ type: 'result', source: 'text', heard: 'x', reply: 'Il fait 27 degrés.', tools: ['météo'] }));
+    expect(screen.queryByText('Météo…')).toBeNull();
+    expect(screen.getByLabelText('Outils utilisés').textContent).toBe('météo');
+  });
+
+  it('confirmation : question parlée, bouton Oui envoyé, puis résultat', async () => {
+    await connect();
+    fireEvent.click(screen.getByText('Quelle heure est-il ?'));
+    act(() => ws().serverSays({ type: 'confirm', source: 'text', heard: 'x', reply: "Je vais verrouiller l'écran. Tu confirmes ?" }));
+    expect(spoken).toContain("Je vais verrouiller l'écran. Tu confirmes ?");
+    fireEvent.click(screen.getByRole('button', { name: 'Oui' }));
+    expect(JSON.parse(ws().sent.at(-1))).toEqual({ type: 'text', text: 'oui' });
+    act(() => ws().serverSays({ type: 'result', source: 'text', heard: 'oui', reply: "L'écran est verrouillé.", tools: ['verrouillage'] }));
+    expect(screen.queryByRole('button', { name: 'Oui' })).toBeNull();
+    expect(screen.getByText("L'écran est verrouillé.")).toBeTruthy();
+  });
+
+  it("la connexion porte un identifiant de conversation, renouvelé quand on efface l'historique", async () => {
+    await connect();
+    const premiere = new URL(ws().url).searchParams.get('session');
+    expect(premiere).toMatch(/^[\w-]{6,64}$/);
+    expect(localStorage.getItem('va.session')).toBe(premiere);
+    fireEvent.click(screen.getByText('Quelle heure est-il ?'));
+    act(() => ws().serverSays({ type: 'result', source: 'text', heard: 'x', reply: 'Il est midi.' }));
+    fireEvent.click(screen.getByText("Effacer l'historique"));
+    await waitFor(() => expect(FakeWS.instances.length).toBeGreaterThan(1), { timeout: 3000 });
+    expect(new URL(ws().url).searchParams.get('session')).not.toBe(premiere);
+  });
+
   it('serveur coupé : statut et reconnexion', async () => {
     await connect();
     act(() => ws().close());
