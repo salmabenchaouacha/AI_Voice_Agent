@@ -1,7 +1,4 @@
-"""Le graphe LangGraph, piloté par un faux modèle (tests/fakes.py) : aucun appel réseau, aucune clé d'API.
 
-On vérifie ce que le graphe fait des décisions du modèle : quels outils partent, dans quel ordre,
-lesquels attendent un oui, et ce que le modèle voit de la conversation."""
 import asyncio
 
 import pytest
