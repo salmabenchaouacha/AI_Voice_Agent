@@ -7,7 +7,8 @@ Messages envoyés au navigateur :
   {"type": "step", "tool", "label"}                    un outil est en cours d'appel (affiché pendant l'attente)
   {"type": "confirm", "heard", "reply"}                l'assistant demande un oui / non avant d'agir
   {"type": "result", "heard", "reply", "tools", …}     réponse finale
-  {"type": "notification", "text"}                     événement spontané (fin d'un minuteur)"""
+  {"type": "notification", "text"}                     événement spontané (fin d'un minuteur)
+  {"type": "state", "timers", "notes", "now"}          minuteurs en cours et dernières notes, après chaque réponse"""
 import asyncio
 import io
 import json
@@ -23,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import actions
 import metrics
 import notifier
 import skills  # noqa: F401  (enregistre les commandes du mode hors-ligne)
@@ -127,6 +129,17 @@ def get_status():
     return assistant.status()
 
 
+def board_state() -> dict:
+    """Ce que le panneau de l'interface affiche : minuteurs (avec leur heure de fin) et dernières notes."""
+    return {"type": "state", "timers": actions.timers_snapshot(), "notes": actions.notes_snapshot(),
+            "now": round(time.time() * 1000)}
+
+
+@app.get("/api/state", dependencies=[Depends(require_origin)])
+def get_state():
+    return board_state()
+
+
 @app.get("/api/metrics", dependencies=[Depends(require_origin)])
 def get_metrics():
     return metrics.summary()
@@ -149,6 +162,7 @@ async def ws_endpoint(ws: WebSocket):
     async def forward_notifications():
         while True:
             await ws.send_json({"type": "notification", "text": await queue.get()})
+            await ws.send_json(board_state())          # le minuteur terminé disparaît du panneau
 
     pump = asyncio.create_task(forward_notifications())
     try:
@@ -180,6 +194,7 @@ async def ws_endpoint(ws: WebSocket):
                                     "reply": "Je n'ai rien compris. Réessaie."})
                 continue
             await ws.send_json(await answer(heard, session, source, emit=ws.send_json, stt_ms=stt_ms))
+            await ws.send_json(board_state())          # minuteur lancé, note ajoutée : le panneau suit
     except WebSocketDisconnect:
         pass
     finally:

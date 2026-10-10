@@ -18,3 +18,4 @@ dist/
 .env
 backend/metrics.jsonl
 backend/eval/results.json
+eval/results.json

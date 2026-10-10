@@ -176,7 +176,18 @@ button, input, select { font: inherit; color: inherit; }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
 .tool { padding: 1px 8px; border: 1px solid var(--rule); border-radius: 999px; color: var(--muted); font-size: 12px; }
 .notice { margin: 0; padding-left: 10px; border-left: 2px solid var(--rec); color: var(--muted); font-size: 14px; }
-
+/* Panneau « Minuteurs et notes » */
+.board { display: grid; gap: 18px; max-height: 42%; overflow-y: auto; padding: 22px 28px 18px; border-bottom: 1px solid var(--rule); }
+.board h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.board ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.timer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; }
+.timer-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.timer-time { font-family: var(--serif); font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--signal); }
+.timer-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.timer-bar > span { display: block; height: 100%; background: var(--signal); transition: width 0.25s linear; }
+.note { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 8px; background: var(--paper); font-size: 15px; }
+.note-text { min-width: 0; overflow-wrap: anywhere; }
+.note-time { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .composer { display: flex; gap: 8px; padding: 14px 28px 22px; border-top: 1px solid var(--rule); }
 .composer input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; background: #fff; }
 .composer input::placeholder { color: var(--muted); }

@@ -4,7 +4,7 @@ import History from './components/History.jsx';
 import MicButton from './components/MicButton.jsx';
 import { useAssistant } from './hooks/useAssistant.js';
 import { useSpeech } from './hooks/useSpeech.js';
-
+import Board from './components/Board.jsx';
 const LOCALES = { fr: 'fr-FR', en: 'en-US', ar: 'ar-SA' };
 
 const SUGGESTIONS = [
@@ -152,6 +152,7 @@ export default function App() {
       </main>
 
       <aside className="side">
+        <Board timers={a.board.timers} notes={a.board.notes} offset={a.board.offset} />
         <History messages={a.messages} locale={locale} onClear={a.clearHistory} />
         <Composer disabled={!a.connected || busy} onSend={a.sendText} />
       </aside>

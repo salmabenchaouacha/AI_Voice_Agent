@@ -1,4 +1,3 @@
-"""Speech-to-Text hors-ligne avec faster-whisper."""
 from faster_whisper import WhisperModel
 from config import LANGUAGE, WHISPER_MODEL
 from config import LANGUAGE, WHISPER_MODEL, WHISPER_PROMPT

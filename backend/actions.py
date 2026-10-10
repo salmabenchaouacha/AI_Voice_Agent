@@ -84,6 +84,24 @@ def read_notes(limit: int = 5, path: str | None = None) -> str:
     return f"{len(lines)} note{'s' if len(lines) > 1 else ''} au total. Les dernières : " + " ; ".join(last)
 
 
+_NOTE_LINE = re.compile(r"^\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\]\s*(.*)$")
+
+
+def notes_snapshot(limit: int = 8, path: str | None = None) -> list[dict]:
+    """Les dernières notes, la plus récente d'abord, pour le panneau de l'interface."""
+    try:
+        with open(path or config.NOTES_FILE, encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        return []
+    out = []
+    for line in reversed(lines[-limit:]):
+        m = _NOTE_LINE.match(line)
+        out.append({"date": m.group(1), "time": m.group(2), "text": m.group(3)} if m
+                   else {"date": "", "time": "", "text": line})
+    return out
+
+
 def clear_notes(path: str | None = None) -> str:
     try:
         os.remove(path or config.NOTES_FILE)
@@ -127,7 +145,7 @@ def start_timer(seconds: int, label: str = "") -> str:
     t = threading.Timer(seconds, done)
     t.daemon = True
     with _timers_lock:
-        _timers[tid] = {"timer": t, "label": label, "end": time.time() + seconds}
+        _timers[tid] = {"timer": t, "label": label, "end": time.time() + seconds, "seconds": seconds}
     t.start()
     return f"Minuteur de {spoken_duration(seconds)} lancé."
 
@@ -140,6 +158,14 @@ def list_timers() -> str:
     now = time.time()
     return "Minuteurs en cours : " + " ; ".join(
         f"{x['label'] or 'sans nom'}, reste {spoken_duration(max(1, round(x['end'] - now)))}" for x in items)
+
+
+def timers_snapshot() -> list[dict]:
+    """Les minuteurs en cours, pour le panneau de l'interface. `end` en millisecondes (horloge du serveur)."""
+    with _timers_lock:
+        items = sorted(_timers.items(), key=lambda kv: kv[1]["end"])
+    return [{"id": tid, "label": x["label"], "end": round(x["end"] * 1000), "seconds": x["seconds"]}
+            for tid, x in items]
 
 
 def cancel_timers() -> str:

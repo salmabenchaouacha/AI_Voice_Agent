@@ -53,7 +53,7 @@ export function useAssistant({ speak, stopSpeaking }) {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');   // nom court de l'outil que l'agent est en train d'appeler
   const [pending, setPending] = useState(false);  // l'assistant attend un oui ou un non
-
+  const [board, setBoard] = useState({ timers: [], notes: [], offset: 0 });  // minuteurs et notes affichés
   const wsRef = useRef(null);
   const analyserRef = useRef(null);   // lu par l'orbe pour l'animation
   const sessionRef = useRef(null);    // { finish(cancel) } pendant un enregistrement
@@ -90,6 +90,12 @@ export function useAssistant({ speak, stopSpeaking }) {
       setActivity('');
       setStatus('idle');
       speak(data.reply);
+    } else if (data.type === 'state') {
+      setBoard({
+        timers: Array.isArray(data.timers) ? data.timers : [],
+        notes: Array.isArray(data.notes) ? data.notes : [],
+        offset: typeof data.now === 'number' ? data.now - Date.now() : 0,
+      });
     } else if (data.type === 'step') {
       setActivity(data.label || data.tool || '');
       if (statusRef.current === 'thinking') armReplyTimeout();   // l'agent travaille : on lui laisse du temps
@@ -107,8 +113,15 @@ export function useAssistant({ speak, stopSpeaking }) {
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(`${proto}://${window.location.host}/ws?session=${encodeURIComponent(sessionId())}`);
       wsRef.current = ws;
-      ws.onopen = () => { setConnected(true); setError((e) => (e === ERR_SERVER ? '' : e)); };
-      ws.onmessage = (e) => {
+      ws.onopen = () => {
+        setConnected(true);
+        setError((e) => (e === ERR_SERVER ? '' : e));
+        // État initial du panneau (minuteurs déjà lancés, notes existantes)
+        fetch('/api/state')
+          .then((r) => r.json())
+          .then((d) => { if (d?.type === 'state') handlerRef.current(d); })
+          .catch(() => {});
+      };      ws.onmessage = (e) => {
         try { handlerRef.current(JSON.parse(e.data)); } catch { /* message illisible */ }
       };
       ws.onclose = () => {
@@ -237,7 +250,7 @@ export function useAssistant({ speak, stopSpeaking }) {
   const dismissError = useCallback(() => setError(''), []);
 
   return {
-    connected, status, messages, error, analyserRef, activity, pending,
+    connected, status, messages, error, analyserRef, activity, pending, board,
     sendText, toggleListening, cancelListening, clearHistory, dismissError,
   };
 }
