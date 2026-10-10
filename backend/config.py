@@ -10,7 +10,10 @@ except ImportError:
     pass
 
 LANGUAGE = os.getenv("VA_LANG", "fr")               # "fr", "en", "ar" : langue reconnue par Whisper et parlée par le navigateur
+
 WHISPER_MODEL = os.getenv("VA_MODEL", "small")      # tiny (rapide) / base / small (conseillé) / medium
+# Mots que Whisper doit s'attendre à entendre (villes, noms propres) : améliore nettement leur reconnaissance
+WHISPER_PROMPT = os.getenv("VA_WHISPER_PROMPT", "Sousse, Tunis, Monastir, Sfax, Nabeul, Toulouse, Orléans. Météo, minuteur, note, YouTube, LangGraph.")
 DEFAULT_CITY = os.getenv("VA_CITY", "Tunis")        # ville par défaut pour la météo
 NOTES_FILE = os.path.expanduser(os.getenv("VA_NOTES", "~/assistant_notes.txt"))
 

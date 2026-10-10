@@ -1,7 +1,7 @@
 """Speech-to-Text hors-ligne avec faster-whisper."""
 from faster_whisper import WhisperModel
 from config import LANGUAGE, WHISPER_MODEL
-
+from config import LANGUAGE, WHISPER_MODEL, WHISPER_PROMPT
 _model = None
 
 
@@ -16,5 +16,6 @@ def transcribe(audio) -> str:
     segments, _ = load().transcribe(
         audio, language=LANGUAGE, beam_size=1,
         vad_filter=True, condition_on_previous_text=False,
+        initial_prompt=WHISPER_PROMPT or None,
     )
     return " ".join(s.text.strip() for s in segments).strip().lower()
