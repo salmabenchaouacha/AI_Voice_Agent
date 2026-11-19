@@ -27,7 +27,8 @@ def test_les_trois_serveurs_exposent_leurs_outils():
     erreurs, outils = avec_serveurs(scenario)
     assert erreurs == {}
     assert {"open_app", "set_volume", "take_screenshot", "lock_screen", "battery_status", "get_weather", "web_search",
-            "read_page", "play_youtube", "open_in_browser", "add_note", "list_notes", "clear_notes"} == set(outils)
+            "read_page", "play_youtube", "open_in_browser", "add_note", "list_notes", "clear_notes", "show_map",
+            "add_task", "list_tasks", "complete_task", "clear_done_tasks"} == set(outils)
     assert outils["lock_screen"].source == "bureau" and outils["web_search"].source == "web"
     assert outils["get_weather"].label == "météo" and outils["open_app"].action == "ouvrir {name}"
 
@@ -40,7 +41,7 @@ def test_les_annotations_mcp_pilotent_le_garde_fou():
     toujours = {n for n, s in outils.items() if needs_confirmation(s, tainted=False)}
     jamais = {n for n, s in outils.items() if not needs_confirmation(s, tainted=True)}
     assert toujours == {"lock_screen", "clear_notes"}
-    assert jamais == {"battery_status", "get_weather", "web_search", "read_page", "list_notes"}
+    assert jamais == {"battery_status", "get_weather", "show_map", "web_search", "read_page", "list_notes", "list_tasks"}
     assert {n for n, s in outils.items() if s.open_world} == {"web_search", "read_page"}     # contenu non fiable
 
 
@@ -80,7 +81,7 @@ def test_un_serveur_en_panne_n_empeche_pas_les_autres():
         return mcp.errors, len(boite.specs())
 
     erreurs, nombre = avec_serveurs(scenario, serveurs)
-    assert list(erreurs) == ["fantôme"] and nombre == 13
+    assert list(erreurs) == ["fantôme"] and nombre == 18
 
 
 def test_noms_en_double_prefixes_par_le_serveur():

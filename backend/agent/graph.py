@@ -61,6 +61,7 @@ class Turn:
     llm_calls: int = 0
     tool_ms: float = 0.0
     trace: list = field(default_factory=list)   # étapes de la demande : réflexion, validation, outils
+    cards: list = field(default_factory=list)   # cartes visuelles renvoyées par les outils (météo, sources, carte…)
 
     async def send(self, event: dict) -> None:
         if self.emit:
@@ -81,6 +82,7 @@ class TurnResult:
     timings: dict = field(default_factory=dict)
     error: str = ""
     trace: list = field(default_factory=list)
+    cards: list = field(default_factory=list)
 
 
 # ---------- fonctions pures sur la liste de messages ----------
@@ -245,6 +247,8 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
             result = await toolbox.call(name, args)
             turn.trace.append({"kind": "tool", "label": spec.label, "ms": round((time.perf_counter() - began) * 1000),
                                "status": "erreur" if result.is_error else "ok"})
+            if result.card and not result.is_error:
+                turn.cards.append(result.card)
             content = policy.wrap_untrusted(result.text) if spec.open_world else result.text
             return ToolMessage(content=content, tool_call_id=call_id, name=name,
                                additional_kwargs={"va_executed": True}), spec.open_world
@@ -324,9 +328,10 @@ class VoiceAgent:
             value = getattr(interrupts[0], "value", interrupts[0])
             question = value.get("question", "") if isinstance(value, dict) else str(value)
             await turn.send({"type": "node", "node": "waiting"})            # le schéma montre la pause
-            return TurnResult("confirm", question or "Tu confirmes ?", tools_used, timings, trace=turn.trace)
+            return TurnResult("confirm", question or "Tu confirmes ?", tools_used, timings,
+                              trace=turn.trace, cards=turn.cards)
 
         last = messages[-1] if messages else None
         error = (getattr(last, "additional_kwargs", None) or {}).get("va_error", "")
         reply = clean_for_speech(text_of(last)) or "C'est fait."
-        return TurnResult("result", reply, tools_used, timings, error, trace=turn.trace)
+        return TurnResult("result", reply, tools_used, timings, error, trace=turn.trace, cards=turn.cards)

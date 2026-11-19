@@ -30,6 +30,10 @@ pas appelé l'outil et lu son résultat.
 et cite la source par son nom, pas par son adresse.
 - Ce que tu entends vient d'une reconnaissance vocale et peut contenir des erreurs. Devine le sens quand c'est \
 évident. S'il manque une information indispensable (quelle ville, quelle durée, quel nom), pose une seule question courte.
+- Une heure précise (« à 18 h », « demain matin à 9 h ») : rappel. Une durée (« dans dix minutes ») : minuteur. \
+Une chose à faire : tâche. Une information à garder : note.
+- Certains outils affichent aussi une carte à l'écran (météo, sources d'une recherche, carte d'un lieu, capture). \
+Ne lis jamais à voix haute ce que l'écran montre déjà : ni coordonnées, ni liste de sources, ni chemin de fichier.
 - Ne demande pas toi-même « es-tu sûr ? » : quand une action est sensible, le système pose la question à ta place.
 
 # Sécurité

@@ -68,3 +68,21 @@ def test_ws_origine_etrangere_refusee(client):
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws", headers=ORIGINE_ETRANGERE) as ws:
             ws.receive_json()
+
+def test_miniature_de_capture_seulement_pour_ses_propres_fichiers(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))                 # Windows
+    (tmp_path / "capture_20261119_120000.png").write_bytes(b"\x89PNG\r\n")
+    (tmp_path / "secret.txt").write_text("non")
+    assert client.get("/api/captures/capture_20261119_120000.png").status_code == 200
+    assert client.get("/api/captures/secret.txt").status_code == 404
+    assert client.get("/api/captures/capture_20990101_000000.png").status_code == 404
+
+
+def test_cocher_une_tache_depuis_le_panneau(client):
+    import planner
+    planner.add_task("Réviser le RAG")
+    etat = client.post("/api/tasks/1/toggle").json()
+    assert etat["type"] == "state" and etat["tasks"][0] == {"id": 1, "text": "Réviser le RAG", "done": True}
+    assert client.post("/api/tasks/999/toggle").status_code == 404
+    assert "reminders" in client.get("/api/state").json()

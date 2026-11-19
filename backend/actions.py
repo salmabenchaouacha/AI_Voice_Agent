@@ -44,22 +44,81 @@ def today_date() -> str:
 
 
 # ---------- Météo ----------
-def weather(city: str = "") -> str:
+def _sky(code) -> str:
+    return next((mot for codes, mot in _CIEL if code in codes), "")
+
+
+def _geocode(place: str) -> dict | None:
+    g = requests.get("https://geocoding-api.open-meteo.com/v1/search",
+                     params={"name": place, "count": 1, "language": "fr"}, timeout=8).json()
+    return (g.get("results") or [None])[0]
+
+
+def weather_report(city: str = "", days: int = 4) -> tuple[str, dict | None]:
+    """(phrase sur le temps actuel, carte météo avec les prévisions des jours suivants)."""
     city = (city or "").strip() or config.DEFAULT_CITY
     try:
-        g = requests.get("https://geocoding-api.open-meteo.com/v1/search",
-                         params={"name": city, "count": 1, "language": "fr"}, timeout=8).json()
-        if not g.get("results"):
-            return f"Je ne trouve pas la ville {city}."
-        r = g["results"][0]
-        w = requests.get("https://api.open-meteo.com/v1/forecast",
-                         params={"latitude": r["latitude"], "longitude": r["longitude"],
-                                 "current": "temperature_2m,wind_speed_10m,weather_code"}, timeout=8).json()["current"]
-    except requests.RequestException:
-        return "Impossible de récupérer la météo, vérifie ta connexion."
-    ciel = next((mot for codes, mot in _CIEL if w.get("weather_code") in codes), "")
-    return (f"À {r['name']}, il fait {round(w['temperature_2m'])} degrés{', ' + ciel + ',' if ciel else ''} "
+        r = _geocode(city)
+        if not r:
+            return f"Je ne trouve pas la ville {city}.", None
+        data = requests.get("https://api.open-meteo.com/v1/forecast",
+                            params={"latitude": r["latitude"], "longitude": r["longitude"],
+                                    "current": "temperature_2m,wind_speed_10m,weather_code",
+                                    "daily": "weather_code,temperature_2m_max,temperature_2m_min",
+                                    "timezone": "auto", "forecast_days": days}, timeout=8).json()
+        w = data["current"]
+    except (requests.RequestException, KeyError, ValueError):
+        return "Impossible de récupérer la météo, vérifie ta connexion.", None
+    ciel = _sky(w.get("weather_code"))
+    text = (f"À {r['name']}, il fait {round(w['temperature_2m'])} degrés{', ' + ciel + ',' if ciel else ''} "
             f"avec un vent de {round(w['wind_speed_10m'])} kilomètres par heure.")
+    daily, jours = data.get("daily") or {}, []
+    for i, date in enumerate(daily.get("time") or []):
+        try:
+            jours.append({"date": date, "code": daily["weather_code"][i], "sky": _sky(daily["weather_code"][i]),
+                          "max": round(daily["temperature_2m_max"][i]), "min": round(daily["temperature_2m_min"][i])})
+        except (KeyError, IndexError, TypeError):
+            break
+    card = {"kind": "weather", "city": r["name"], "country": r.get("country", ""),
+            "lat": r["latitude"], "lon": r["longitude"], "temp": round(w["temperature_2m"]),
+            "code": w.get("weather_code"), "sky": ciel, "wind": round(w["wind_speed_10m"]), "days": jours}
+    return text, card
+
+
+def forecast_text(card: dict | None) -> str:
+    """Les prévisions en une phrase, pour que le modèle puisse répondre à « et demain ? »."""
+    jours = (card or {}).get("days") or []
+    parts = []
+    for i, d in enumerate(jours[1:], 1):
+        try:
+            nom = "demain" if i == 1 else JOURS[datetime.strptime(d["date"], "%Y-%m-%d").weekday()]
+        except (KeyError, ValueError):
+            continue
+        parts.append(f"{nom}, de {d['min']} à {d['max']} degrés{', ' + d['sky'] if d.get('sky') else ''}")
+    return (" Prévisions : " + " ; ".join(parts) + ".") if parts else ""
+
+
+def weather(city: str = "") -> str:
+    return weather_report(city)[0]
+
+
+# ---------- Carte d'un lieu ----------
+def locate_report(place: str) -> tuple[str, dict | None]:
+    """(où se trouve le lieu, carte OpenStreetMap centrée dessus)."""
+    place = (place or "").strip()
+    if not place:
+        return "Quel lieu veux-tu voir sur la carte ?", None
+    try:
+        r = _geocode(place)
+    except (requests.RequestException, ValueError):
+        return "Impossible de chercher ce lieu, vérifie ta connexion.", None
+    if not r:
+        return f"Je ne trouve pas le lieu {place}.", None
+    where = ", ".join(x for x in (r.get("admin1"), r.get("country")) if x and x != r["name"])
+    text = (f"Lieu trouvé : {r['name']}{', ' + where if where else ''}. La carte est affichée à l'écran, "
+            f"ne lis pas les coordonnées.")
+    card = {"kind": "map", "name": r["name"], "place": where, "lat": r["latitude"], "lon": r["longitude"]}
+    return text, card
 
 
 # ---------- Notes ----------
@@ -214,21 +273,41 @@ def _search_backend(query: str, max_results: int) -> list[dict]:
     return list(DDGS().text(query, region="fr-fr", max_results=max_results))
 
 
-def web_search(query: str, max_results: int = 4) -> str:
+SEARCH_RETRY_DELAY = 1.5        # secondes avant le second essai
+
+
+def web_search_report(query: str, max_results: int = 4) -> tuple[str, dict | None]:
+    """(résultats à lire par le modèle, carte des sources à afficher)."""
     query = (query or "").strip()
     if not query:
-        return "Il me faut des mots à chercher."
+        return "Il me faut des mots à chercher.", None
+    n = max(1, min(int(max_results), 8))
     try:
-        results = _search_backend(query, max(1, min(int(max_results), 8)))
+        try:
+            results = _search_backend(query, n)
+        except ImportError:
+            raise
+        except Exception:                      # DuckDuckGo refuse parfois une requête isolée : on réessaie une fois
+            time.sleep(SEARCH_RETRY_DELAY)
+            results = _search_backend(query, n)
     except ImportError:
-        return "La recherche web n'est pas installée. Lance : pip install ddgs"
+        return "La recherche web n'est pas installée. Lance : pip install ddgs", None
     except Exception as e:  # moteur indisponible, quota, réseau…
-        return f"La recherche web a échoué ({type(e).__name__}). Réessaie dans un instant."
+        return f"La recherche web a échoué ({type(e).__name__}). Réessaie dans un instant.", None
     if not results:
-        return f"Aucun résultat pour {query}."
-    return "\n".join(
+        return f"Aucun résultat pour {query}.", None
+    text = "\n".join(
         f"{i}. {r.get('title', '').strip()} : {r.get('body', '').strip()} (source : {r.get('href', '')})"
         for i, r in enumerate(results, 1))
+    items = [{"title": (r.get("title") or "").strip() or urlparse(r["href"]).netloc,
+              "url": r["href"], "site": urlparse(r["href"]).netloc.removeprefix("www."),
+              "snippet": (r.get("body") or "").strip()[:180]}
+             for r in results if urlparse(r.get("href") or "").scheme in ("http", "https")]
+    return text, ({"kind": "sources", "query": query, "items": items} if items else None)
+
+
+def web_search(query: str, max_results: int = 4) -> str:
+    return web_search_report(query, max_results)[0]
 
 
 class _TextOnly(HTMLParser):

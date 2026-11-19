@@ -6,9 +6,10 @@ Le navigateur envoie de l'audio (ou du texte) sur /ws ; le serveur transcrit ave
 Messages envoyés au navigateur :
   {"type": "step", "tool", "label"}                    un outil est en cours d'appel (affiché pendant l'attente)
   {"type": "confirm", "heard", "reply"}                l'assistant demande un oui / non avant d'agir
-  {"type": "result", "heard", "reply", "tools", …}     réponse finale
+  {"type": "result", "heard", "reply", "tools", …}     réponse finale (avec "trace" et "cards" : cartes visuelles)
   {"type": "notification", "text"}                     événement spontané (fin d'un minuteur)
-  {"type": "state", "timers", "notes", "audit", "now"} minuteurs, notes et actions sensibles, après chaque réponse
+  {"type": "state", "timers", "notes", "tasks", "reminders", "audit", "now"}
+                                                       le panneau de droite, après chaque réponse
   {"type": "node", "node"}                             nœud du graphe actif (agent, review, tools, waiting) : schéma animé"""
 import asyncio
 import io
@@ -22,6 +23,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -29,6 +31,7 @@ import actions
 import audit
 import metrics
 import notifier
+import planner
 import skills  # noqa: F401  (enregistre les commandes du mode hors-ligne)
 from agent.runtime import Assistant, run_offline
 from config import LANGUAGE
@@ -42,6 +45,7 @@ ALLOWED_ORIGINS = set(os.getenv(
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 MAX_TEXT_CHARS = 500
 SESSION_RE = re.compile(r"[\w-]{6,64}")     # identifiant de conversation choisi par le navigateur
+CAPTURE_RE = re.compile(r"capture_\d{8}_\d{6}\.png")   # nom des captures d'écran faites par l'assistant
 
 assistant = Assistant()
 
@@ -62,6 +66,9 @@ async def lifespan(app: FastAPI):
         from stt import load
         await asyncio.to_thread(load)
         print("Modèle prêt.")
+    restored = planner.restore_reminders()   # les rappels programmés avant un redémarrage
+    if restored:
+        print(f"{restored} rappel(s) reprogrammé(s).")
     await assistant.start()                  # lance les serveurs MCP et compile le graphe, si un LLM est configuré
     if assistant.mode == "agent":
         print(f"Mode agent : {len(assistant.agent.toolbox.specs())} outils disponibles.")
@@ -93,7 +100,8 @@ async def answer(heard: str, session: str, source: str, emit=None, stt_ms: int =
                "total_ms": stt_ms + round((time.perf_counter() - started) * 1000)}
     metrics.record({"mode": out["mode"], "type": out["type"], "source": source, "tools": out["tools"], **timings})
     return {"type": out["type"], "source": source, "heard": heard, "reply": out["reply"],
-            "tools": out["tools"], "mode": out["mode"], "timings": timings, "trace": out.get("trace", [])}
+            "tools": out["tools"], "mode": out["mode"], "timings": timings, "trace": out.get("trace", []),
+            "cards": out.get("cards", [])}
 
 
 def transcribe_bytes(data: bytes) -> str:
@@ -134,12 +142,30 @@ def get_status():
 def board_state() -> dict:
     """Ce que le panneau de l'interface affiche : minuteurs (avec leur heure de fin) et dernières notes."""
     return {"type": "state", "timers": actions.timers_snapshot(), "notes": actions.notes_snapshot(),
+            "tasks": planner.tasks_snapshot(), "reminders": planner.reminders_snapshot(),
             "audit": audit.recent(8), "now": round(time.time() * 1000)}
 
 
 @app.get("/api/state", dependencies=[Depends(require_origin)])
 def get_state():
     return board_state()
+
+
+@app.post("/api/tasks/{task_id}/toggle", dependencies=[Depends(require_origin)])
+def post_toggle_task(task_id: int):
+    """Cocher ou décocher une tâche directement dans le panneau."""
+    if not planner.toggle_task(task_id):
+        raise HTTPException(status_code=404, detail="Tâche introuvable")
+    return board_state()
+
+
+@app.get("/api/captures/{name}", dependencies=[Depends(require_origin)])
+def get_capture(name: str):
+    """Miniature d'une capture d'écran faite par l'assistant : seulement ses propres fichiers, dans le dossier personnel."""
+    path = Path(os.path.expanduser("~")) / name
+    if not CAPTURE_RE.fullmatch(name) or not path.is_file():
+        raise HTTPException(status_code=404, detail="Capture introuvable")
+    return FileResponse(path, media_type="image/png")
 
 
 @app.get("/api/metrics", dependencies=[Depends(require_origin)])

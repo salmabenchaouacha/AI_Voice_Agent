@@ -42,9 +42,9 @@ def test_assemblage_complet_avec_les_vrais_serveurs_mcp(tmp_path, monkeypatch):
 
     etat, note, contenu, question, encore_la, fin = asyncio.run(scenario())
     assert etat["mode"] == "agent" and etat["mcp_errors"] == {}
-    assert len(etat["tools"]) == 18                                   # 13 outils MCP + 5 outils locaux
+    assert len(etat["tools"]) == 26                                   # 18 outils MCP + 8 outils locaux
     assert note == {"type": "result", "reply": "C'est noté.", "tools": ["note"], "mode": "agent",
-                    "timings": note["timings"], "trace": note["trace"]}
+                    "timings": note["timings"], "trace": note["trace"], "cards": []}
     assert [e["kind"] for e in note["trace"]] == ["llm", "tool", "llm"]
     assert "appeler PROXYM" in contenu
     assert question["type"] == "confirm" and question["reply"] == "Je vais effacer toutes tes notes. Tu confirmes ?"

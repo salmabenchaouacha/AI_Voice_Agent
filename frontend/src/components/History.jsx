@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import Cards from './Cards.jsx';
 import Trace from './Trace.jsx';
 
 export default function History({ messages, locale, onClear }) {
@@ -44,6 +45,7 @@ export default function History({ messages, locale, onClear }) {
                     {m.tools.map((t, i) => <span key={`${t}-${i}`} className="tool">{t}</span>)}
                   </p>
                 )}
+                {m.role === 'assistant' && <Cards cards={m.cards} />}
                 {m.role === 'assistant' && <Trace steps={m.trace} />}
               </>
             )}

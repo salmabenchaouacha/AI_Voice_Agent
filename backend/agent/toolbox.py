@@ -10,6 +10,8 @@ import inspect
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+import cards
+
 MAX_RESULT_CHARS = 4000
 
 
@@ -30,6 +32,7 @@ class ToolSpec:
 class ToolResult:
     text: str
     is_error: bool = False
+    card: dict | None = None         # carte à afficher sous la réponse (voir cards.py), jamais lue par le modèle
 
 
 @dataclass
@@ -79,6 +82,8 @@ class Toolbox:
         except Exception as e:  # un outil qui plante ne doit jamais faire tomber la conversation
             return ToolResult(f"L'outil {name} a échoué : {e}", is_error=True)
         result = out if isinstance(out, ToolResult) else ToolResult(str(out))
+        result.text, card = cards.split(result.text)       # la carte est détachée avant que le modèle ne lise le texte
+        result.card = result.card or card
         if len(result.text) > MAX_RESULT_CHARS:
             result.text = result.text[:MAX_RESULT_CHARS] + "…"
         return result

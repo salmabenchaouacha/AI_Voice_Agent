@@ -16,6 +16,8 @@ WHISPER_MODEL = os.getenv("VA_MODEL", "small")      # tiny (rapide) / base / sma
 WHISPER_PROMPT = os.getenv("VA_WHISPER_PROMPT", "Sousse, Tunis, Monastir, Sfax, Nabeul, Toulouse, Orléans. Météo, minuteur, note, YouTube, LangGraph.")
 DEFAULT_CITY = os.getenv("VA_CITY", "Tunis")        # ville par défaut pour la météo
 NOTES_FILE = os.path.expanduser(os.getenv("VA_NOTES", "~/assistant_notes.txt"))
+TASKS_FILE = os.path.expanduser(os.getenv("VA_TASKS", "~/assistant_tasks.json"))           # liste de tâches
+REMINDERS_FILE = os.path.expanduser(os.getenv("VA_REMINDERS", "~/assistant_reminders.json"))  # rappels à heure fixe
 
 # ---------- Agent (LangGraph + MCP) ----------
 # VA_AGENT : "auto" (agent si un LLM est configuré, sinon regex) ou "off" (regex seulement)

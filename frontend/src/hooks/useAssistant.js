@@ -53,7 +53,7 @@ export function useAssistant({ speak, stopSpeaking }) {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');   // nom court de l'outil que l'agent est en train d'appeler
   const [pending, setPending] = useState(false);  // l'assistant attend un oui ou un non
-  const [board, setBoard] = useState({ timers: [], notes: [], audit: [], offset: 0 });  // panneau de droite
+  const [board, setBoard] = useState({ timers: [], notes: [], tasks: [], reminders: [], audit: [], offset: 0 });  // panneau de droite
   const [node, setNode] = useState('');           // nœud du graphe actif : agent, review, tools, waiting
 
   const wsRef = useRef(null);
@@ -87,6 +87,7 @@ export function useAssistant({ speak, stopSpeaking }) {
       const extra = {};
       if (data.tools?.length) extra.tools = data.tools;
       if (data.trace?.length) extra.trace = data.trace;
+      if (data.cards?.length) extra.cards = data.cards;    // météo, sources, carte, capture
       if (data.type === 'confirm') extra.confirm = true;
       add(mk('assistant', data.reply, extra));
       setPending(data.type === 'confirm');
@@ -98,6 +99,8 @@ export function useAssistant({ speak, stopSpeaking }) {
       setBoard({
         timers: Array.isArray(data.timers) ? data.timers : [],
         notes: Array.isArray(data.notes) ? data.notes : [],
+        tasks: Array.isArray(data.tasks) ? data.tasks : [],
+        reminders: Array.isArray(data.reminders) ? data.reminders : [],
         audit: Array.isArray(data.audit) ? data.audit : [],
         offset: typeof data.now === 'number' ? data.now - Date.now() : 0,
       });
@@ -257,9 +260,16 @@ export function useAssistant({ speak, stopSpeaking }) {
     wsRef.current?.close();
   }, []);
   const dismissError = useCallback(() => setError(''), []);
+  // Cocher une tâche dans le panneau : le serveur renvoie le nouvel état du panneau.
+  const toggleTask = useCallback((id) => {
+    fetch(`/api/tasks/${id}/toggle`, { method: 'POST' })
+      .then((r) => r.json())
+      .then((d) => { if (d?.type === 'state') handlerRef.current(d); })
+      .catch(() => {});
+  }, []);
 
   return {
     connected, status, messages, error, analyserRef, activity, pending, board, node,
-    sendText, toggleListening, cancelListening, clearHistory, dismissError,
+    sendText, toggleListening, cancelListening, clearHistory, dismissError, toggleTask,
   };
 }

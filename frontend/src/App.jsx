@@ -22,9 +22,11 @@ const SUGGESTIONS = [
 const SUGGESTIONS_AGENT = [
   'Quelle heure est-il ?',
   'Météo à Sousse puis minuteur de 10 minutes',
-  'Note de réviser le RAG et relis mes notes',
+  'Et demain, il fera beau à Sousse ?',
+  'Montre-moi Kairouan sur la carte',
   'Cherche les nouveautés de LangGraph',
-  "Je m'appelle Salma, retiens-le",
+  'Ajoute « réviser le RAG » à mes tâches',
+  "Rappelle-moi d'appeler maman à 18 h 30",
   "Verrouille l'écran",
 ];
 
@@ -46,7 +48,9 @@ export default function App() {
   const speech = useSpeech(locale);
   const a = useAssistant({ speak: speech.speak, stopSpeaking: speech.stop });
 
+  // Relu à chaque connexion : si la page s'ouvre avant que le serveur soit prêt, le mode arrive quand même.
   useEffect(() => {
+    if (!a.connected) return;
     fetch('/api/config')
       .then((r) => r.json())
       .then((c) => c.language && setLang(c.language))
@@ -55,7 +59,7 @@ export default function App() {
       .then((r) => r.json())
       .then((s) => MODES[s.mode] && setMode(s.mode))
       .catch(() => {});
-  }, []);
+  }, [a.connected]);
 
   const phase = a.status === 'idle' && speech.speaking ? 'speaking' : a.status;
 
@@ -156,7 +160,8 @@ export default function App() {
       </main>
 
       <aside className="side">
-        <Board timers={a.board.timers} notes={a.board.notes} audit={a.board.audit} offset={a.board.offset} />
+        <Board timers={a.board.timers} notes={a.board.notes} tasks={a.board.tasks} reminders={a.board.reminders}
+          audit={a.board.audit} offset={a.board.offset} onToggleTask={a.toggleTask} />
         <History messages={a.messages} locale={locale} onClear={a.clearHistory} />
         <Composer disabled={!a.connected || busy} onSend={a.sendText} />
       </aside>

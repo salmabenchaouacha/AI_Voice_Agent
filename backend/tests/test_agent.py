@@ -154,7 +154,7 @@ def test_les_faits_retenus_sont_dans_le_prompt_systeme():
 
 # ---------- robustesse ----------
 def test_boucle_d_outils_arretee():
-    agent, _, journal = creer([ai("", ("get_weather", {}))] * 5, max_steps=2)
+    agent, _, journal = creer([ai("", ("get_weather", {})) for _ in range(5)], max_steps=2)
     (r,) = jouer(agent, "météo en boucle")
     assert r.reply == TOO_MANY_STEPS and len(journal) == 2
 
@@ -225,3 +225,17 @@ def test_action_bloquee_apres_contenu_web_journalisee_avec_sa_raison():
     jouer(agent, "cherche x", "non")
     assert journal[0]["reason"] == "après contenu web" and journal[0]["action"] == "ouvrir evil"
     assert journal[0]["outcome"] == "refusée"
+
+
+# ---------- cartes visuelles (lot 2) ----------
+def test_les_cartes_des_outils_arrivent_avec_la_reponse():
+    import cards
+    from agent.toolbox import ToolSpec
+    agent, modele, _ = creer([ai("", ("show_map", {"place": "Sousse"})), ai("Sousse est en Tunisie.")])
+    agent.toolbox.register(ToolSpec(name="show_map", description="", schema={}, read_only=True, open_world=False,
+                                    label="carte"),
+                           lambda a: cards.attach("Lieu trouvé : Sousse.", {"kind": "map", "name": "Sousse"}))
+    (r,) = jouer(agent, "où est Sousse ?")
+    assert r.cards == [{"kind": "map", "name": "Sousse"}]
+    vu_par_le_modele = contenus(modele.vus[-1], "tool")
+    assert vu_par_le_modele == ["Lieu trouvé : Sousse."]           # le JSON de la carte ne va jamais au modèle

@@ -1,10 +1,12 @@
 """Serveur MCP « bureau » : applications, volume, capture d'écran, verrouillage, batterie."""
+import os
 import re
 from typing import Literal
 
 from _common import A_CONFIRMER, ACTION, LECTURE, MCPServer, meta
 
 import actions
+import cards
 import system
 
 mcp = MCPServer("bureau", instructions="Pilote l'ordinateur de l'utilisateur : applications, volume, écran, batterie.")
@@ -31,8 +33,10 @@ def set_volume(action: Literal["up", "down", "mute"]) -> str:
 
 @mcp.tool(annotations=ACTION, meta=meta("capture d'écran", "faire une capture d'écran"))
 def take_screenshot() -> str:
-    """Fait une capture d'écran et l'enregistre dans le dossier personnel. Retourne le chemin du fichier."""
-    return f"Capture enregistrée : {system.screenshot()}"
+    """Fait une capture d'écran et l'enregistre dans le dossier personnel. Une miniature s'affiche à l'écran."""
+    path = system.screenshot()
+    card = {"kind": "image", "title": "Capture d'écran", "url": f"/api/captures/{os.path.basename(path)}"}
+    return cards.attach(f"Capture enregistrée : {path}", card)
 
 
 @mcp.tool(annotations=A_CONFIRMER, meta=meta("verrouillage", "verrouiller l'écran"))

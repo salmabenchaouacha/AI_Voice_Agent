@@ -87,7 +87,7 @@ class Assistant:
                 error = turn.error
                 if not (error and not turn.tools):
                     return {"type": turn.kind, "reply": turn.reply, "tools": turn.tools, "mode": "agent",
-                            "timings": turn.timings, "trace": turn.trace, **({"error": error} if error else {})}
+                            "timings": turn.timings, "trace": turn.trace, "cards": turn.cards, **({"error": error} if error else {})}
             # Le modèle n'a pas répondu et rien n'a été exécuté : la même phrase passe par les regex.
             print(f"Agent en échec, repli sur les regex : {error}")
             reply = await asyncio.to_thread(run_offline, text)

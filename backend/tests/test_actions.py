@@ -77,6 +77,7 @@ def test_recherche_web_retourne_des_extraits(monkeypatch):
 
 
 def test_recherche_web_sans_resultat_ou_en_panne(monkeypatch):
+    monkeypatch.setattr(actions, "SEARCH_RETRY_DELAY", 0)
     monkeypatch.setattr(actions, "_search_backend", lambda q, n: [])
     assert actions.web_search("zzz") == "Aucun résultat pour zzz."
 

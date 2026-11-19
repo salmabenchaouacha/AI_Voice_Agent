@@ -175,6 +175,48 @@ describe('Assistant vocal', () => {
     expect(screen.getByText('refusée')).toBeTruthy();
   });
 
+  it('cartes visuelles : météo avec prévisions, sources cliquables, lien dangereux ignoré', async () => {
+    await connect();
+    fireEvent.click(screen.getByText('Quelle heure est-il ?'));
+    act(() => ws().serverSays({
+      type: 'result', source: 'text', heard: 'x', reply: 'Il fait 27 degrés, et il pleuvra demain.', tools: ['météo'],
+      cards: [
+        { kind: 'weather', city: 'Sousse', country: 'Tunisie', lat: 35.8, lon: 10.6, temp: 27, code: 2, sky: 'quelques nuages', wind: 12,
+          days: [{ date: '2026-11-19', code: 2, max: 25, min: 15 }, { date: '2026-11-20', code: 61, max: 21, min: 14 }] },
+        { kind: 'sources', query: 'langgraph', items: [
+          { title: 'LangGraph', url: 'https://www.langchain.com/langgraph', site: 'langchain.com' },
+          { title: 'Piège', url: 'javascript:alert(1)', site: 'x' },
+        ] },
+        { kind: 'inconnu' },
+      ],
+    }));
+    expect(screen.getByLabelText('Météo à Sousse')).toBeTruthy();
+    expect(screen.getByText('27°')).toBeTruthy();
+    expect(screen.getByText('Demain')).toBeTruthy();
+    expect(screen.getByText('LangGraph').closest('a').getAttribute('href')).toBe('https://www.langchain.com/langgraph');
+    expect(screen.queryByText('Piège')).toBeNull();
+  });
+
+  it('panneau : rappels et tâches, une tâche se coche', async () => {
+    await connect();
+    const now = Date.now();
+    act(() => ws().serverSays({
+      type: 'state', now, timers: [], notes: [], audit: [],
+      reminders: [{ id: 1, text: 'Appeler maman', at: now + 2 * 3600000 + 5 * 60000 }],
+      tasks: [{ id: 1, text: 'Réviser le RAG', done: false }, { id: 2, text: 'Appeler la banque', done: true }],
+    }));
+    expect(screen.getByText('Appeler maman')).toBeTruthy();
+    expect(screen.getByText(/dans 2 h 0[45]/)).toBeTruthy();
+    expect(screen.getByText('1 à faire')).toBeTruthy();
+    global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({
+      type: 'state', now, timers: [], notes: [], audit: [], reminders: [],
+      tasks: [{ id: 1, text: 'Réviser le RAG', done: true }, { id: 2, text: 'Appeler la banque', done: true }],
+    }) }));
+    fireEvent.click(screen.getByLabelText('Réviser le RAG'));
+    expect(global.fetch).toHaveBeenCalledWith('/api/tasks/1/toggle', { method: 'POST' });
+    await waitFor(() => expect(screen.getByText('0 à faire')).toBeTruthy());
+  });
+
   it('serveur coupé : statut et reconnexion', async () => {
     await connect();
     act(() => ws().close());
