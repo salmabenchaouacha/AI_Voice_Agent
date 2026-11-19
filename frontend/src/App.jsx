@@ -23,7 +23,6 @@ const SUGGESTIONS_AGENT = [
   'Quelle heure est-il ?',
   'Météo à Sousse puis minuteur de 10 minutes',
   'Et demain, il fera beau à Sousse ?',
-  'Montre-moi Kairouan sur la carte',
   'Cherche les nouveautés de LangGraph',
   'Ajoute « réviser le RAG » à mes tâches',
   "Rappelle-moi d'appeler maman à 18 h 30",

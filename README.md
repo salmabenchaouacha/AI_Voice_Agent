@@ -1,68 +1,64 @@
-# Assistant vocal : agent LangGraph + outils MCP
+# AI Voice Agent: a LangGraph agent that acts through MCP tools
 
-Un assistant vocal qui tourne sur ton ordinateur. Tu parles, Whisper transcrit, un agent décide quoi faire,
-agit à travers des outils MCP, et la réponse est lue à voix haute.
+*[Version française](README.fr.md)*
 
-La version 1 reconnaissait des commandes avec des regex. La version 2 garde ce mode comme secours et ajoute
-un vrai agent par-dessus.
+A voice assistant that runs on your own computer. You speak, Whisper transcribes, a LangGraph agent decides which
+tools to call, acts through MCP servers (desktop, web, notes and tasks, Google Calendar) and answers out loud.
+Sensitive actions wait for a spoken "yes", and web content can never trigger an action on its own.
 
-| Ce qui manquait | Ce qui le fournit maintenant |
+**At a glance**
+
+- **28 tools** on 4 MCP servers plus local tools, discovered at startup; several actions per spoken request.
+- **Prompt-injection guard**: after untrusted web content enters a request, every action on the machine needs the
+  user's confirmation. Its effect is measured with an ablation study (`eval/run_eval.py --compare-guard`).
+- **Evaluated against the real model**: 21/23 scenarios passed on the initial set (91 %, 95 % CI 73–98 %), median
+  latency of 1.2 s per turn with `gemini-3.5-flash-lite`, plus a held-out set of 17 scenarios written after the
+  prompts were frozen.
+- **Full stack**: FastAPI + WebSocket backend, React frontend with a live view of the agent graph, step traces,
+  visual cards and a side panel for timers, reminders and tasks.
+
+## Contents
+
+[What you see](#what-you-see) · [Architecture](#architecture) · [Tools](#tools) · [Security model](#security-model) ·
+[Evaluation](#evaluation) · [What still fails](#what-still-fails) · [Getting started](#getting-started) ·
+[Google Calendar](#google-calendar-optional) · [Tests](#tests) · [Configuration](#configuration) ·
+[Project structure](#project-structure) · [Roadmap](#roadmap)
+
+## What you see
+
+| Feature | Detail |
 |---|---|
-| Une seule action par phrase | Boucle `agent → review → tools` du graphe : le modèle enchaîne autant d'outils que nécessaire |
-| Aucune mémoire de conversation | Checkpointer LangGraph, une conversation par navigateur (`thread_id`) |
-| Aucune confirmation | `interrupt()` avant toute action sensible, reprise sur le « oui » ou le « non » de l'utilisateur |
-| Recherche web qui ouvre juste un onglet | Outils `web_search` et `read_page` : l'agent lit les résultats et les résume |
-| LLM appelé seulement en dernier recours, sans outil | Le LLM choisit les outils ; les regex ne servent plus que hors-ligne |
-| Fonctions câblées dans le code | Serveurs MCP décrits dans `mcp.json` : ajouter un outil = ajouter un serveur |
-| Une réponse en texte seul | Cartes visuelles, graphe animé, trace des étapes, panneau de suivi (voir ci-dessous) |
+| Live agent graph | The *Reasoning → Review → Tools* nodes light up while the agent works; *Review* turns amber while it waits for a "yes". |
+| Streamed answer | The reply is written as the model generates it (`astream`), then read aloud with word-by-word highlighting. |
+| Uncertain words | Each transcribed word carries its Whisper probability; words under 60 % are underlined, so a transcription error is visible ("source" instead of "Sousse"). |
+| Step trace | Under every answer: "4 steps · 1.6 s", then each model call and tool call with its duration and status. |
+| Visual cards | Weather with a 4-day forecast, clickable web sources, OpenStreetMap map of a place, screenshot thumbnail, Google Calendar events. |
+| Side panel | Countdown timers, upcoming reminders, a task list you can tick with the mouse, latest notes, and the log of sensitive actions (confirmed / refused). |
 
-## Ce qu'on voit à l'écran
-
-- **Le graphe de l'agent, animé** : les cases Réflexion → Validation → Outils s'allument en direct pendant la
-  demande. La case Validation passe en orange quand l'agent attend un oui.
-- **La réponse en direct** : le texte s'écrit au fur et à mesure que le modèle le génère (`astream`). Pendant la
-  lecture à voix haute, les mots se surlignent (karaoké).
-- **Les mots incertains** : chaque mot transcrit arrive avec sa probabilité Whisper. Sous 60 %, il est souligné,
-  ce qui montre d'où vient une erreur de transcription (« source » au lieu de « Sousse »).
-- **La trace des étapes** sous chaque réponse : « 4 étapes · 1,6 s », puis le détail de chaque appel du modèle
-  et de chaque outil, avec sa durée.
-- **Des cartes visuelles** sous la réponse :
-  - la météo avec les prévisions sur 4 jours ;
-  - les sources cliquables d'une recherche web ;
-  - une carte OpenStreetMap d'un lieu ;
-  - la miniature d'une capture d'écran ;
-  - les événements Google Agenda d'un jour.
-- **Le panneau de droite**, mis à jour après chaque réponse :
-  - les minuteurs qui décomptent ;
-  - les rappels à venir ;
-  - la liste de tâches, qu'on peut cocher à la souris ;
-  - les dernières notes ;
-  - le journal des actions sensibles (confirmée / refusée).
-
-Une carte voyage avec le texte de l'outil, derrière un marqueur (`backend/cards.py`), et passe donc telle quelle
-par MCP. La boîte à outils la détache avant que le modèle ne lise le résultat. Le modèle ne voit jamais le JSON
-de la carte, et ne lit donc ni coordonnées ni liens à voix haute.
+A card travels with the tool's text behind a marker (`backend/cards.py`), so it passes through MCP unchanged. The
+toolbox detaches it before the model reads the result: the model never sees coordinates, links or file paths, and
+never reads them out loud.
 
 ## Architecture
 
 ```
- navigateur (React)                       backend (FastAPI)
-┌───────────────────┐  audio / texte   ┌──────────────────────────────────────────────────────────┐
-│ micro, historique │ ───────────────► │ server.py   WebSocket /ws                                │
-│ synthèse vocale   │ ◄─────────────── │   │  stt.py (Whisper)                                    │
-└───────────────────┘  node / delta /  │   ▼                                                      │
-                       step / result   │ agent/runtime.py ── pas de LLM ? ──► router.py + skills.py│
-                                       │   │                                   (regex, hors-ligne)│
+ browser (React)                          backend (FastAPI)
+┌───────────────────┐  audio / text    ┌──────────────────────────────────────────────────────────┐
+│ mic, history,     │ ───────────────► │ server.py   WebSocket /ws                                │
+│ graph, cards,     │ ◄─────────────── │   │  stt.py (faster-whisper, word probabilities)         │
+│ side panel, TTS   │  node / delta /  │   ▼                                                      │
+└───────────────────┘  step / result   │ agent/runtime.py ── no LLM? ──► router.py + skills.py    │
+                                       │   │                              (regex, offline mode)   │
                                        │   ▼                                                      │
-                                       │ agent/graph.py  (LangGraph)                              │
+                                       │ agent/graph.py  (LangGraph StateGraph)                   │
                                        │   START ─► agent ─► review ─► tools ─┐                   │
                                        │              ▲   │      │            │                   │
                                        │              └───┼──────┼────────────┘                   │
                                        │                  ▼      ▼                                │
-                                       │                 END   interrupt() : « Tu confirmes ? »   │
+                                       │                 END   interrupt(): "Do you confirm?"     │
                                        │   │                                                      │
                                        │   ▼ agent/toolbox.py                                     │
-                                       │   ├─ outils locaux : minuteurs, rappels, mémoire         │
+                                       │   ├─ local tools: timers, reminders, memory              │
                                        │   └─ agent/mcp_client.py ──stdio──► mcp_servers/         │
                                        │                                      ├ desktop_server.py │
                                        │                                      ├ web_server.py     │
@@ -71,175 +67,256 @@ de la carte, et ne lit donc ni coordonnées ni liens à voix haute.
                                        └──────────────────────────────────────────────────────────┘
 ```
 
-Les trois nœuds du graphe :
+- **agent**: the model reads the conversation and either answers or calls one or more tools.
+- **review**: the guard (`agent/policy.py`) decides whether these calls need a "yes". If so, the graph pauses with
+  `interrupt()` and resumes on the user's answer (`Command(resume=...)`).
+- **tools**: runs the accepted calls. Reads run in parallel, actions one by one in the requested order, each with
+  a timeout.
 
-- **agent** : le modèle lit la conversation et choisit de répondre ou d'appeler un ou plusieurs outils.
-- **review** : le garde-fou (`agent/policy.py`) décide si ces appels exigent un oui. Si oui, le graphe se met en pause.
-- **tools** : exécute les appels acceptés. Les lectures partent en parallèle, les actions une par une dans l'ordre demandé.
+Conversation memory uses a LangGraph checkpointer keyed by `thread_id` (one conversation per browser). A long-term
+memory (`remember` / `forget_memory`) stores facts the user asks to keep. If no model is configured, a regex router
+handles simple commands offline.
 
-## Les outils
+## Tools
 
-18 outils viennent de trois serveurs MCP, 8 sont locaux. Le serveur `agenda` en ajoute 2 une fois Google connecté.
-
-| Serveur MCP | Outils | Confirmation |
+| MCP server | Tools | Confirmation |
 |---|---|---|
-| `bureau` | `open_app`, `set_volume`, `take_screenshot`, `battery_status` | non |
-| `bureau` | `lock_screen` | toujours |
-| `web` | `get_weather`, `show_map`, `web_search`, `read_page`, `play_youtube`, `open_in_browser` | non |
-| `notes` | `add_note`, `list_notes`, `add_task`, `list_tasks`, `complete_task`, `clear_done_tasks` | non |
-| `notes` | `clear_notes` | toujours |
-| `agenda` (désactivé par défaut) | `list_events`, `create_event` | non |
-| (local) | `start_timer`, `list_timers`, `cancel_timers`, `set_reminder`, `list_reminders`, `cancel_reminders`, `remember` | non |
-| (local) | `forget_memory` | toujours |
+| `bureau` (desktop) | `battery_status` | never (read-only) |
+| `bureau` | `open_app`, `set_volume`, `take_screenshot` | after web content |
+| `bureau` | `lock_screen` | always |
+| `web` | `get_weather`, `show_map`, `web_search`, `read_page` | never (read-only) |
+| `web` | `play_youtube`, `open_in_browser` | after web content |
+| `notes` | `list_notes`, `list_tasks` | never (read-only) |
+| `notes` | `add_note`, `add_task`, `complete_task`, `clear_done_tasks` | after web content |
+| `notes` | `clear_notes` | always |
+| `agenda` (Google Calendar) | `list_events` | never (read-only) |
+| `agenda` | `create_event` | after web content |
+| local | `list_timers`, `list_reminders` | never (read-only) |
+| local | `start_timer`, `cancel_timers`, `set_reminder`, `cancel_reminders`, `remember` | after web content |
+| local | `forget_memory` | always |
 
-« Non » veut dire : pas de confirmation, sauf après du contenu web (voir le garde-fou).
+Each server describes its own tools with the standard MCP annotations (`read_only_hint`, `destructive_hint`,
+`open_world_hint`); the agent knows no tool in advance. Timers, reminders and memory stay local because they need
+the web server's process, which holds the connection to the browser. Reminders are also written to disk and
+rescheduled on restart. Tasks live in a JSON file shared by the `notes` MCP server (the agent) and the web server
+(the checkbox in the panel).
 
-Minuteurs, rappels et mémoire restent locaux, parce qu'ils ont besoin du processus du serveur web : c'est lui qui
-tient la connexion au navigateur pour annoncer la fin d'un minuteur ou un rappel. Les rappels sont aussi écrits
-sur disque et reprogrammés au redémarrage. Les tâches vivent dans un fichier JSON partagé entre le serveur MCP
-`notes` (l'agent) et le serveur web (la case à cocher du panneau).
+`backend/mcp.json` uses the same format as Claude Desktop or Cursor, so any existing MCP server can be plugged in
+without code. A tool without annotations is treated as the MCP specification says: assumed destructive, so
+confirmed.
 
-Chaque serveur décrit lui-même ses outils avec les annotations standard de MCP (`read_only_hint`,
-`destructive_hint`, `open_world_hint`). L'agent ne connaît aucun outil à l'avance : il les découvre au démarrage.
+## Security model
 
-### Brancher un autre serveur MCP
+Three rules, applied to every tool call the model requests (`agent/policy.py`):
 
-`backend/mcp.json` a le même format que celui de Claude Desktop ou de Cursor. Pour ajouter un serveur existant
-(fichiers, agenda, GitHub…), ajoute une entrée, sans toucher au code :
+1. A read-only tool always runs.
+2. A tool its server marks as destructive always needs a "yes".
+3. Any other tool that acts on the machine needs a "yes" **if untrusted web content entered the current request**.
 
-```json
-{
-  "mcpServers": {
-    "bureau": { "command": "python", "args": ["mcp_servers/desktop_server.py"] },
-    "fichiers": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/moi/Documents"] }
-  }
-}
+Rule 3 is the defence against prompt injection. A malicious page can convince the model to call
+`open_in_browser` or `create_event`, but it cannot answer "yes" in the user's place. In addition:
+
+- web content is wrapped in `<contenu_externe>` tags and the system prompt treats it as data only;
+- it is removed from the context on the next request, so it cannot act later;
+- `read_page` refuses local and private addresses (SSRF), `open_app` refuses anything that looks like a command;
+- every confirmation decision is logged (`~/assistant_audit.jsonl`) and shown in the side panel.
+
+The confirmation question repeats the parsed arguments ("I'm going to lock the screen. Do you confirm?"), which
+also catches transcription errors. An answer that is neither yes nor no ("no, set a timer instead") cancels the
+action and is passed to the model as a new request.
+
+**Ablation.** `python eval/run_eval.py --compare-guard` replays the injection scenarios under three variants of the
+guard (full, without rule 3, no confirmation at all) and counts the scenarios where a planted action was actually
+executed. Results are written to `eval/report.md`.
+
+## Evaluation
+
+`python eval/run_eval.py` plays spoken scenarios against the **real model**. Tools are replaced by doubles that
+record each call and return a fixed text, so the real model chooses, the real graph and the real guard decide,
+but nothing runs on the machine. A scenario passes when the executed tools match the expected ones: no missing
+call, no unexpected call, no forbidden call, and the expected number of confirmations.
+
+| Set | Scenarios | Purpose |
+|---|---|---|
+| `initial` | 23 | Written with the first version; used to tune the prompts. |
+| `nouveau` (held out) | 17 | Written after the prompts were frozen, for features added later (cards, tasks, reminders, calendar); never used for tuning. |
+
+Categories: no tool needed, one action, several actions, memory (follow-ups), confirmation (yes / no / something
+else), prompt injection (malicious search result or page), plus the new features and a few traps (a knowledge
+question that needs no tool, a note that must not become a task, a duration that calls for a timer, not a
+reminder).
+
+**Measured results** (`google_genai:gemini-3.5-flash-lite`, initial set, version before the visual cards,
+tasks and calendar):
+
+| Metric | Value |
+|---|---|
+| Scenarios passed | 21/23 (91 %), 95 % confidence interval 73–98 % |
+| Median latency per turn (simulated tools, so mostly the model) | 1.2 s |
+
+The script now reports both sets separately with Wilson confidence intervals, the injection ablation, and a
+table of every failure (expected vs executed tools, last reply). `eval/report.md` holds the latest run.
+
+```powershell
+cd backend
+python eval/run_eval.py --compare-guard     # both sets + guard ablation, writes eval/report.md
+python eval/run_eval.py --only nouveau      # held-out set only
+python eval/run_eval.py --model ollama:qwen3:8b   # compare another model on the same scenarios
 ```
 
-Un outil sans annotations est traité comme la spécification MCP le prévoit : supposé destructif, donc soumis à confirmation.
+**Latency in real use.** Each request appends a line to `backend/metrics.jsonl` (durations and tool names, never
+the spoken text). `GET /api/metrics` returns the median and 90th percentile per mode, split into transcription,
+model and tools.
 
-## Le garde-fou
+### Limits of the measurement
 
-Trois règles, appliquées à chaque appel d'outil demandé par le modèle (`agent/policy.py`) :
+- 23 + 17 scenarios is small: the 95 % interval on the initial set spans 25 points. Treat the numbers as an order
+  of magnitude, not a benchmark.
+- The scenarios, the prompts and the tool descriptions were written by the same author, which makes the results
+  optimistic. The held-out set limits this bias but does not remove it.
+- Tools are simulated: the evaluation measures the agent's decisions, not the tools themselves (those are covered
+  by the unit and integration tests).
+- Scenarios are in French only, and typed, not spoken: transcription errors are not part of this score.
 
-1. Un outil en lecture seule passe toujours.
-2. Un outil marqué « à confirmer » par son serveur demande toujours un oui.
-3. Tout autre outil qui agit sur la machine demande un oui **si du contenu web est entré dans la demande en cours**.
+## What still fails
 
-La règle 3 est la défense contre l'injection de prompt. Une page piégée peut convaincre le modèle d'appeler
-`open_in_browser`, mais elle ne peut pas répondre « oui » à la place de l'utilisateur. En complément :
+The failures of the latest run are listed one by one in `eval/report.md`. Known failure modes and limitations:
 
-- le contenu web est encadré par `<contenu_externe>` et le prompt système dit de n'y voir que des données ;
-- il est retiré du contexte à la demande suivante, donc il ne peut pas agir à retardement ;
-- `read_page` refuse les adresses locales (`127.0.0.1`, réseau privé), `open_app` refuse ce qui ressemble à une commande.
+- **Ambiguous intent between close tools**: a note vs a task, a reminder at a time vs a timer for a duration,
+  a reminder vs a calendar event. The system prompt gives explicit rules, but the model can still pick the
+  neighbour.
+- **Relative dates** ("next Thursday at 10") are computed by the model from the current date given in the prompt;
+  an off-by-one day is possible.
+- **Conversation memory is in RAM** (`InMemorySaver`): it is lost on restart. A SQLite checkpointer
+  (`langgraph-checkpoint-sqlite`) would keep it.
+- After a confirmation question, the user has to press the mic again to answer; the agent cannot be interrupted
+  while it thinks; the answer is spoken only once complete.
+- Word highlighting is exact with local Windows voices; other voices do not report word boundaries and the
+  position is estimated from elapsed time.
+- `read_page` checks the address before reading it, but does not protect against DNS rebinding between the check
+  and the request. An MCP server that crashes is not restarted automatically.
 
-La question de confirmation reprend les arguments compris (« Je vais ouvrir chrome. Tu confirmes ? »), ce qui
-permet aussi de rattraper une erreur de transcription. Si l'utilisateur répond autre chose que oui ou non
-(« non, mets plutôt un minuteur »), l'action est abandonnée et sa phrase est transmise au modèle.
+## Getting started
 
-## Installation
-
-Python 3.11 ou plus récent, Node 18 ou plus récent.
+Python 3.11+, Node 18+.
 
 ```powershell
 # Backend
 cd backend
 python -m venv .venv
-.venv\Scripts\activate            # Linux / macOS : source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-copy .env.example .env            # puis mets ta clé dans .env
+.venv\Scripts\activate                 # Linux / macOS: source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-dev.txt
+copy .env.example .env                 # then put your API key in .env
 python server.py
 
-# Frontend (autre terminal)
+# Frontend (second terminal)
 cd frontend
 npm install
-npm run dev                       # http://localhost:5173
+npm run dev                            # http://localhost:5173
 ```
 
-Au démarrage, le serveur affiche `Mode agent : 26 outils disponibles.` ou `Mode hors-ligne (regex) : …` avec la raison.
-`GET /api/status` donne le mode, le modèle, la liste des outils et leur règle de confirmation.
+At startup the server prints `Mode agent : 26 outils disponibles.` (28 with Google Calendar), or the offline
+mode and its reason. `GET /api/status` returns the mode, the model, the tools and their confirmation rule.
 
-Sous Windows, lance bien `python server.py` et non `uvicorn --reload` : le rechargement automatique change la
-boucle asyncio et peut empêcher le lancement des serveurs MCP.
+On Windows, run `python server.py`, not `uvicorn --reload`: auto-reload changes the asyncio loop and can prevent
+the MCP servers from starting.
 
-### Google Agenda (facultatif)
+**Changing the model** only takes one variable, since the graph depends on LangChain's common chat interface:
 
-Le serveur MCP `agenda` lit et crée des événements dans le Google Agenda de l'utilisateur. Il est désactivé dans
-`mcp.json` tant que le compte n'est pas connecté. La mise en place se fait une seule fois :
+```
+VA_LLM=google_genai:gemini-3.5-flash-lite     # used for the evaluation (langchain-google-genai)
+VA_LLM=anthropic:claude-haiku-4-5-20251001    # code default
+VA_LLM=ollama:qwen3:8b                         # local model, no key (langchain-ollama)
+```
 
-1. Sur [console.cloud.google.com](https://console.cloud.google.com), crée un projet et active **Google Calendar API**.
-2. Dans *API et services → Écran de consentement OAuth*, choisis « Externe » et ajoute ton adresse comme
-   utilisateur de test.
-3. Dans *Identifiants*, crée un **ID client OAuth** de type « Application de bureau », télécharge le JSON et
-   enregistre-le sous `backend/google_credentials.json`. Ce fichier est dans `.gitignore`.
-4. Installe les bibliothèques et autorise l'accès :
+## Google Calendar (optional)
+
+The `agenda` MCP server reads and creates events in the user's Google Calendar. One-time setup:
+
+1. In the [Google Cloud console](https://console.cloud.google.com), create a project and enable the
+   **Google Calendar API**.
+2. Configure the OAuth consent screen as *External* and add your address as a **test user**.
+3. Create an **OAuth client ID** of type *Desktop app*, download the JSON and save it as
+   `backend/google_credentials.json` (ignored by git).
+4. Install the libraries and authorise access:
    ```powershell
-   pip install google-api-python-client google-auth-oauthlib
+   python -m pip install google-api-python-client google-auth-oauthlib
    python mcp_servers/calendar_server.py --login
    ```
-   Le jeton est gardé dans `~/.assistant_google_token.json`, hors du projet.
-5. Dans `backend/mcp.json`, passe `"enabled"` du serveur `agenda` à `true`, puis relance le serveur
-   (28 outils au démarrage).
-
-Exemples : « Qu'est-ce que j'ai demain ? », « Ajoute une réunion PFE jeudi à 10 h ».
-
-### Changer de modèle
-
-Le graphe ne dépend que de l'interface commune de LangChain. Une variable suffit :
-
-```
-VA_LLM=google_genai:gemini-3.5-flash-lite      # celui utilisé pour l'évaluation (pip install langchain-google-genai)
-VA_LLM=anthropic:claude-haiku-4-5-20251001    # défaut du code
-VA_LLM=ollama:qwen3:8b                         # modèle local, aucune clé (pip install langchain-ollama)
-```
+   The token is stored in `~/.assistant_google_token.json`, outside the project.
+5. In `backend/mcp.json`, set `"enabled": true` for the `agenda` server and restart.
 
 ## Tests
 
 ```powershell
 cd backend
-pytest                    # aucun appel réseau, aucune clé d'API nécessaire
+python -m pytest          # no network, no API key
 
 cd ../frontend
-npm test
+npm test                  # Vitest + Testing Library
 ```
 
-| Fichier | Ce qu'il vérifie |
+| File | What it checks |
 |---|---|
-| `test_agent.py` | le graphe, avec un faux modèle : multi-actions, confirmation, refus, injection, mémoire, limites |
-| `test_mcp.py` | les trois serveurs MCP lancés pour de vrai et interrogés par le client |
-| `test_assistant.py` | l'assemblage complet : faux modèle → graphe → serveurs MCP réels → WebSocket |
-| `test_policy.py`, `test_actions.py` | le garde-fou et les fonctions, en Python pur |
-| `test_cards.py` | cartes visuelles : marqueur, météo et prévisions, carte d'un lieu, sources, second essai de la recherche |
-| `test_planner.py` | tâches (ajout, doublons, recherche à l'oral, case à cocher) et rappels (heure comprise, rappel qui sonne, reprise au démarrage) |
-| `test_agenda.py` | Google Agenda avec un faux service Google, et le serveur MCP `agenda` lancé pour de vrai |
-| `test_stt.py` | probabilité de chaque mot transcrit, avec un faux modèle Whisper |
-| les autres | le mode hors-ligne d'origine, inchangé |
+| `test_agent.py` | the graph with a fake model: multi-actions, confirmation, refusal, injection, memory, limits, streaming, cards |
+| `test_mcp.py`, `test_agenda.py` | the MCP servers launched for real (stdio) and queried by the client; Google Calendar with a fake Google service |
+| `test_assistant.py` | the full assembly: fake model → graph → real MCP servers → WebSocket |
+| `test_policy.py` | the three guard rules |
+| `test_eval.py` | the evaluation set (well-formed, tools exist), confidence intervals, guard variants, report |
+| `test_cards.py`, `test_planner.py`, `test_stt.py` | visual cards, tasks and reminders, word probabilities |
+| `test_api.py`, `test_actions.py`, others | HTTP and WebSocket API, actions, and the original offline mode |
 
-## Mesures
+The tests always use the same MCP servers, whatever your `mcp.json` says: `tests/conftest.py` writes a test
+configuration with the Google Calendar server disabled.
 
-Deux sources de chiffres.
+## Configuration
 
-**Latence réelle.** Chaque demande ajoute une ligne à `backend/metrics.jsonl` (durées et noms d'outils, jamais le
-texte prononcé). `GET /api/metrics` en donne la médiane et le 90ᵉ centile, par mode, avec la part de la
-transcription, du modèle et des outils.
+Environment variables or `backend/.env` (see `.env.example`):
 
-**Qualité des décisions.** `python eval/run_eval.py` joue 23 scénarios parlés contre le vrai modèle, avec des
-outils simulés : rien n'est exécuté sur la machine. Il donne le taux de réussite par catégorie (une action,
-plusieurs actions, mémoire, confirmation, injection), la latence par tour et le nombre d'injections bloquées.
-`--model` permet de comparer deux modèles sur les mêmes scénarios.
+| Variable | Default | Purpose |
+|---|---|---|
+| `VA_LLM` | `anthropic:claude-haiku-4-5-20251001` | Agent model, `provider:model` |
+| `VA_AGENT` | `auto` | `auto` (agent if a model is configured) or `off` (regex only) |
+| `VA_MODEL` | `small` | Whisper model: `tiny`, `base`, `small`, `medium` |
+| `VA_LANG` | `fr` | Recognition and speech language |
+| `VA_WORD_CONFIDENCE` | `1` | Word probabilities (uncertain words underlined) |
+| `VA_CITY` | `Tunis` | Default city for the weather |
+| `VA_MAX_STEPS` | `6` | Model ↔ tools round trips per request |
+| `VA_HISTORY_TURNS` | `8` | Requests kept in the model's context |
+| `VA_TOOL_TIMEOUT` | `20` | Seconds per tool call |
+| `VA_MCP_CONFIG` | `backend/mcp.json` | MCP servers to launch |
+| `VA_TASKS`, `VA_REMINDERS`, `VA_NOTES`, `VA_MEMORY` | files in the home folder | Where tasks, reminders, notes and memory are stored |
 
-Résultat avec `gemini-3.5-flash-lite` : **91 % de réussite (21 scénarios sur 23)**, latence médiane de l'agent
-**1,2 s** par tour.
+## Project structure
 
-## Limites connues
+```
+backend/
+├── server.py              FastAPI app: WebSocket /ws, /api/state, /api/status, /api/metrics
+├── stt.py                 faster-whisper transcription with word probabilities
+├── cards.py               visual cards attached to tool results
+├── actions.py, planner.py weather, map, search, notes / tasks and reminders
+├── agenda.py              Google Calendar (OAuth, read, create)
+├── agent/
+│   ├── graph.py           LangGraph StateGraph: agent → review → tools, interrupt(), streaming
+│   ├── policy.py          the guard
+│   ├── toolbox.py         tool registry, timeouts, simulated copy for the evaluation
+│   ├── mcp_client.py      persistent MCP sessions, one asyncio task per server
+│   ├── local_tools.py     timers, reminders, memory
+│   └── runtime.py         agent mode or offline regex mode
+├── mcp_servers/           desktop, web, notes, calendar
+├── eval/                  scenarios.json, run_eval.py, report.md
+└── tests/
+frontend/src/
+├── App.jsx
+├── hooks/                 useAssistant (WebSocket, mic, state), useSpeech (TTS, word highlighting)
+└── components/            AgentGraph, Trace, Board, Cards, History, Spoken, MicButton, Composer
+```
 
-- La mémoire de conversation est en RAM (`InMemorySaver`) : elle disparaît au redémarrage du serveur. Pour la
-  garder, passe un checkpointer SQLite à `VoiceAgent` (`langgraph-checkpoint-sqlite`).
-- Après une question de confirmation, il faut rappuyer sur le micro pour répondre : l'écoute ne redémarre pas seule.
-- Le surlignage des mots est exact avec les voix locales de Windows. D'autres voix ne signalent pas les mots :
-  la position est alors estimée au temps.
-- La réponse en direct n'est pas lue avant d'être complète : la synthèse vocale démarre à la fin.
-- On ne peut pas interrompre l'agent pendant qu'il réfléchit.
-- La synthèse vocale est celle du navigateur ; l'arabe dialectal dépend des voix installées.
-- `read_page` vérifie l'adresse avant de la lire, mais ne protège pas contre un DNS qui change de réponse entre les deux.
-- Un serveur MCP qui plante en cours de route n'est pas relancé automatiquement.
+## Roadmap
+
+In order of expected impact:
+
+1. Add real spoken requests to the evaluation set, including transcription errors.
+2. Persist the conversation memory (SQLite checkpointer).
+3. Start speaking while the answer is still streaming, and restart listening after a confirmation question.
+4. Restart a crashed MCP server automatically.

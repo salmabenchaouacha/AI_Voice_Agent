@@ -77,7 +77,7 @@ def test_le_serveur_mcp_agenda_demarre_et_se_decrit():
     import json
     with open(config.MCP_CONFIG, encoding="utf-8") as f:
         brut = json.load(f)["mcpServers"]
-    assert brut["agenda"]["enabled"] is False                             # désactivé tant que Google n'est pas connecté
+    assert brut["agenda"]["enabled"] is False                             # désactivé dans la configuration des tests
     assert "agenda" not in load_config(config.MCP_CONFIG)
 
     async def scenario():

@@ -171,9 +171,13 @@ def window(messages: list, toolbox: Toolbox, history_turns: int) -> list:
 def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] = lambda: [],
                 checkpointer: Any = None, max_steps: int = 6, history_turns: int = 8,
                 language: str = "fr", city: str = "", llm_timeout: float = 30.0,
-                on_decision: Callable[[list[dict]], None] | None = None):
+                on_decision: Callable[[list[dict]], None] | None = None,
+                confirm_rule: Callable[[Any, bool], bool] | None = None):
     """`model` : n'importe quel modèle de chat LangChain (ou un faux modèle dans les tests).
-    `on_decision(entrées)` : appelé à chaque réponse à une demande de confirmation (journal des actions sensibles)."""
+    `on_decision(entrées)` : appelé à chaque réponse à une demande de confirmation (journal des actions sensibles).
+    `confirm_rule(spec, tainted)` : la règle de confirmation (policy.needs_confirmation par défaut). Seule
+    l'évaluation la remplace, pour mesurer ce que vaut le garde-fou (eval/run_eval.py --guard)."""
+    confirm_rule = confirm_rule or policy.needs_confirmation
     llm = model.bind_tools(toolbox.as_llm_tools()) if toolbox.specs() else model
 
     async def generate(prompt: list, turn: Turn) -> AIMessage:
@@ -228,7 +232,7 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
         flagged = []
         for call in state["messages"][-1].tool_calls:
             spec = toolbox.get(call["name"])
-            if policy.needs_confirmation(spec, tainted):
+            if confirm_rule(spec, tainted):
                 flagged.append((call, spec))
         if not flagged:
             return {"decision": {}, "reviewed": []}
@@ -306,11 +310,13 @@ class VoiceAgent:
 
     def __init__(self, model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] = lambda: [],
                  checkpointer: Any = None, max_steps: int = 6, history_turns: int = 8,
-                 language: str = "fr", city: str = "", on_decision: Callable[[list[dict]], None] | None = None):
+                 language: str = "fr", city: str = "", on_decision: Callable[[list[dict]], None] | None = None,
+                 confirm_rule: Callable[[Any, bool], bool] | None = None):
         self.toolbox = toolbox
         self.max_steps = max_steps
         self.graph = build_graph(model, toolbox, facts=facts, checkpointer=checkpointer, max_steps=max_steps,
-                                 history_turns=history_turns, language=language, city=city, on_decision=on_decision)
+                                 history_turns=history_turns, language=language, city=city, on_decision=on_decision,
+                                 confirm_rule=confirm_rule)
         self._awaiting: set[str] = set()
 
     async def _pending_interrupts(self, config: dict) -> list | None:
