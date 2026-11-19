@@ -138,6 +138,43 @@ describe('Assistant vocal', () => {
     expect(new URL(ws().url).searchParams.get('session')).not.toBe(premiere);
   });
 
+  it('panneau : minuteur qui décompte et note affichée', async () => {
+    await connect();
+    const now = Date.now();
+    act(() => ws().serverSays({
+      type: 'state',
+      now,
+      timers: [{ id: 1, label: 'pâtes', end: now + 125000, seconds: 600 }],
+      notes: [{ date: '2026-10-10', time: '17:40', text: 'réviser LangGraph' }],
+    }));
+    expect(screen.getByText('pâtes')).toBeTruthy();
+    expect(screen.getByLabelText('Temps restant pâtes').textContent).toMatch(/^02:0[45]$/);
+    expect(screen.getByText('réviser LangGraph')).toBeTruthy();
+    act(() => ws().serverSays({ type: 'state', now, timers: [], notes: [] }));
+    expect(screen.queryByText('pâtes')).toBeNull();
+    expect(screen.queryByLabelText('Minuteurs et notes')).toBeNull();
+  });
+
+  it("trace des étapes et journal des actions sensibles", async () => {
+    await connect();
+    fireEvent.click(screen.getByText('Quelle heure est-il ?'));
+    act(() => ws().serverSays({
+      type: 'result', source: 'text', heard: 'x', reply: 'Il fait 27 degrés.', tools: ['météo'],
+      trace: [
+        { kind: 'llm', ms: 820, calls: ['météo'] },
+        { kind: 'tool', label: 'météo', ms: 140, status: 'ok' },
+        { kind: 'llm', ms: 610, calls: [] },
+      ],
+    }));
+    expect(screen.getByText('3 étapes · 1,6 s')).toBeTruthy();
+    act(() => ws().serverSays({
+      type: 'state', now: Date.now(), timers: [], notes: [],
+      audit: [{ t: Date.now(), action: "verrouiller l'écran", reason: 'action sensible', outcome: 'refusée' }],
+    }));
+    expect(screen.getByText("verrouiller l'écran")).toBeTruthy();
+    expect(screen.getByText('refusée')).toBeTruthy();
+  });
+
   it('serveur coupé : statut et reconnexion', async () => {
     await connect();
     act(() => ws().close());

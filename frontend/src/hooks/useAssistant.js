@@ -53,7 +53,9 @@ export function useAssistant({ speak, stopSpeaking }) {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');   // nom court de l'outil que l'agent est en train d'appeler
   const [pending, setPending] = useState(false);  // l'assistant attend un oui ou un non
-  const [board, setBoard] = useState({ timers: [], notes: [], offset: 0 });  // minuteurs et notes affichés
+  const [board, setBoard] = useState({ timers: [], notes: [], audit: [], offset: 0 });  // panneau de droite
+  const [node, setNode] = useState('');           // nœud du graphe actif : agent, review, tools, waiting
+
   const wsRef = useRef(null);
   const analyserRef = useRef(null);   // lu par l'orbe pour l'animation
   const sessionRef = useRef(null);    // { finish(cancel) } pendant un enregistrement
@@ -84,9 +86,11 @@ export function useAssistant({ speak, stopSpeaking }) {
       if (data.source === 'voice' && data.heard) add(mk('user', data.heard, { via: 'voice' }));
       const extra = {};
       if (data.tools?.length) extra.tools = data.tools;
+      if (data.trace?.length) extra.trace = data.trace;
       if (data.type === 'confirm') extra.confirm = true;
       add(mk('assistant', data.reply, extra));
       setPending(data.type === 'confirm');
+      setNode(data.type === 'confirm' ? 'waiting' : '');
       setActivity('');
       setStatus('idle');
       speak(data.reply);
@@ -94,8 +98,11 @@ export function useAssistant({ speak, stopSpeaking }) {
       setBoard({
         timers: Array.isArray(data.timers) ? data.timers : [],
         notes: Array.isArray(data.notes) ? data.notes : [],
+        audit: Array.isArray(data.audit) ? data.audit : [],
         offset: typeof data.now === 'number' ? data.now - Date.now() : 0,
       });
+    } else if (data.type === 'node') {
+      setNode(data.node || '');
     } else if (data.type === 'step') {
       setActivity(data.label || data.tool || '');
       if (statusRef.current === 'thinking') armReplyTimeout();   // l'agent travaille : on lui laisse du temps
@@ -121,7 +128,8 @@ export function useAssistant({ speak, stopSpeaking }) {
           .then((r) => r.json())
           .then((d) => { if (d?.type === 'state') handlerRef.current(d); })
           .catch(() => {});
-      };      ws.onmessage = (e) => {
+      };
+      ws.onmessage = (e) => {
         try { handlerRef.current(JSON.parse(e.data)); } catch { /* message illisible */ }
       };
       ws.onclose = () => {
@@ -130,6 +138,7 @@ export function useAssistant({ speak, stopSpeaking }) {
           clearTimeout(replyTimer.current);
           setStatus('idle');
           setActivity('');
+          setNode('');
           setError('Connexion perdue pendant la réponse. Réessaie.');
         }
         if (!stopped) retry = setTimeout(connect, 1500);
@@ -250,7 +259,7 @@ export function useAssistant({ speak, stopSpeaking }) {
   const dismissError = useCallback(() => setError(''), []);
 
   return {
-    connected, status, messages, error, analyserRef, activity, pending, board,
+    connected, status, messages, error, analyserRef, activity, pending, board, node,
     sendText, toggleListening, cancelListening, clearHistory, dismissError,
   };
 }

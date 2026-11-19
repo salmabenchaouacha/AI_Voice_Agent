@@ -15,6 +15,9 @@ La boucle agent → review → tools recommence tant que le modèle demande des 
 « donne-moi la météo à Sousse puis mets un minuteur de dix minutes » en une seule phrase.
 L'état est sauvegardé après chaque nœud par le checkpointer, sous un identifiant de conversation (thread_id) :
 c'est à la fois la mémoire des échanges précédents et ce qui rend la pause possible.
+
+Pendant l'exécution, les nœuds diffusent des événements au navigateur (le nœud actif, pour le schéma animé)
+et notent chaque étape avec sa durée (la trace affichée sous la réponse).
 """
 import asyncio
 import contextvars
@@ -47,6 +50,7 @@ class State(TypedDict, total=False):
     messages: Annotated[list, add_messages]   # toute la conversation ; add_messages ajoute au lieu de remplacer
     tainted: bool                             # du contenu non fiable est entré dans la demande en cours
     decision: dict                            # id d'appel refusé -> explication donnée au modèle
+    reviewed: list                            # actions soumises à confirmation et réponse obtenue (pour la trace)
 
 
 @dataclass
@@ -56,6 +60,7 @@ class Turn:
     llm_ms: float = 0.0
     llm_calls: int = 0
     tool_ms: float = 0.0
+    trace: list = field(default_factory=list)   # étapes de la demande : réflexion, validation, outils
 
     async def send(self, event: dict) -> None:
         if self.emit:
@@ -75,6 +80,7 @@ class TurnResult:
     tools: list[str] = field(default_factory=list)      # noms courts des outils exécutés pendant la demande
     timings: dict = field(default_factory=dict)
     error: str = ""
+    trace: list = field(default_factory=list)
 
 
 # ---------- fonctions pures sur la liste de messages ----------
@@ -154,8 +160,10 @@ def window(messages: list, toolbox: Toolbox, history_turns: int) -> list:
 # ---------- le graphe ----------
 def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] = lambda: [],
                 checkpointer: Any = None, max_steps: int = 6, history_turns: int = 8,
-                language: str = "fr", city: str = "", llm_timeout: float = 30.0):
-    """`model` : n'importe quel modèle de chat LangChain (ou un faux modèle dans les tests)."""
+                language: str = "fr", city: str = "", llm_timeout: float = 30.0,
+                on_decision: Callable[[list[dict]], None] | None = None):
+    """`model` : n'importe quel modèle de chat LangChain (ou un faux modèle dans les tests).
+    `on_decision(entrées)` : appelé à chaque réponse à une demande de confirmation (journal des actions sensibles)."""
     llm = model.bind_tools(toolbox.as_llm_tools()) if toolbox.specs() else model
 
     async def agent(state: State) -> dict:
@@ -164,15 +172,23 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
         rounds = rounds_since_human(messages)
         prompt = [SystemMessage(content=build_system_prompt(language=language, city=city, facts=facts()))]
         prompt += window(messages, toolbox, history_turns)
+        await turn.send({"type": "node", "node": "agent"})
         started = time.perf_counter()
         try:
             reply = await asyncio.wait_for(llm.ainvoke(prompt), llm_timeout)
         except Exception as e:      # clé invalide, quota, réseau, délai dépassé : on termine proprement, sans planter le graphe
+            print(f"Erreur du modèle : {type(e).__name__}: {e}")
             reply = AIMessage(content=LLM_DOWN, additional_kwargs={"va_error": f"{type(e).__name__}: {e}"[:300]})
-        turn.llm_ms += (time.perf_counter() - started) * 1000
+        elapsed = (time.perf_counter() - started) * 1000
+        turn.llm_ms += elapsed
         turn.llm_calls += 1
         if rounds >= max_steps and getattr(reply, "tool_calls", None):
             reply = AIMessage(content=TOO_MANY_STEPS)       # garde-fou contre une boucle d'outils sans fin
+        calls = getattr(reply, "tool_calls", None) or []
+        turn.trace.append({"kind": "llm", "ms": round(elapsed), "calls": [toolbox.label(c["name"]) for c in calls],
+                           "error": "va_error" in (reply.additional_kwargs or {})})
+        if calls:
+            await turn.send({"type": "node", "node": "review"})
         return {"messages": [reply]}
 
     def after_agent(state: State) -> str:
@@ -187,30 +203,48 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
             if policy.needs_confirmation(spec, tainted):
                 flagged.append((call, spec))
         if not flagged:
-            return {"decision": {}}
+            return {"decision": {}, "reviewed": []}
         question = policy.confirmation_question([policy.describe(spec, call.get("args") or {}) for call, spec in flagged])
         answer = interrupt({"question": question, "tools": [call["name"] for call, _ in flagged]})
         said = answer.get("text", "") if isinstance(answer, dict) else str(answer)
         verdict = policy.parse_confirmation(said)
+        outcome = {True: "confirmée", False: "refusée"}.get(verdict, "remplacée")
+        reviewed = [{"tool": call["name"], "label": spec.label, "action": policy.describe(spec, call.get("args") or {}),
+                     "reason": "action sensible" if spec.destructive else "après contenu web", "outcome": outcome}
+                    for call, spec in flagged]
+        if on_decision:
+            try:
+                on_decision(reviewed)
+            except Exception:
+                pass                        # le journal ne doit jamais bloquer l'agent
         if verdict is True:
-            return {"decision": {}}
+            return {"decision": {}, "reviewed": reviewed}
         note = policy.refusal_note(verdict, said)
-        return {"decision": {call["id"]: note for call, _ in flagged}}
+        return {"decision": {call["id"]: note for call, _ in flagged}, "reviewed": reviewed}
 
     async def tools(state: State) -> dict:
         turn = _TURN.get() or Turn()
         calls = state["messages"][-1].tool_calls
         refused = state.get("decision") or {}
+        if state.get("reviewed"):
+            turn.trace.append({"kind": "review", "items": [{"label": r["label"], "outcome": r["outcome"]}
+                                                           for r in state["reviewed"]]})
+        await turn.send({"type": "node", "node": "tools"})
 
         async def run(call: dict) -> tuple[ToolMessage, bool]:
             name, args, call_id = call["name"], call.get("args") or {}, call["id"]
             spec = toolbox.get(name)
             if call_id in refused or spec is None:
                 content = refused.get(call_id) or f"L'outil {name} n'existe pas."
+                turn.trace.append({"kind": "tool", "label": toolbox.label(name), "ms": 0,
+                                   "status": "refusé" if call_id in refused else "inconnu"})
                 return ToolMessage(content=content, tool_call_id=call_id, name=name,
                                    additional_kwargs={"va_executed": False}), False
             await turn.send({"type": "step", "tool": name, "label": spec.label})
+            began = time.perf_counter()
             result = await toolbox.call(name, args)
+            turn.trace.append({"kind": "tool", "label": spec.label, "ms": round((time.perf_counter() - began) * 1000),
+                               "status": "erreur" if result.is_error else "ok"})
             content = policy.wrap_untrusted(result.text) if spec.open_world else result.text
             return ToolMessage(content=content, tool_call_id=call_id, name=name,
                                additional_kwargs={"va_executed": True}), spec.open_world
@@ -224,7 +258,7 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
         turn.tool_ms += (time.perf_counter() - started) * 1000
         return {"messages": [m for m, _ in done],
                 "tainted": bool(state.get("tainted")) or any(untrusted for _, untrusted in done),
-                "decision": {}}
+                "decision": {}, "reviewed": []}
 
     builder = StateGraph(State)
     builder.add_node("agent", agent)
@@ -242,11 +276,11 @@ class VoiceAgent:
 
     def __init__(self, model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] = lambda: [],
                  checkpointer: Any = None, max_steps: int = 6, history_turns: int = 8,
-                 language: str = "fr", city: str = ""):
+                 language: str = "fr", city: str = "", on_decision: Callable[[list[dict]], None] | None = None):
         self.toolbox = toolbox
         self.max_steps = max_steps
         self.graph = build_graph(model, toolbox, facts=facts, checkpointer=checkpointer, max_steps=max_steps,
-                                 history_turns=history_turns, language=language, city=city)
+                                 history_turns=history_turns, language=language, city=city, on_decision=on_decision)
         self._awaiting: set[str] = set()
 
     async def _pending_interrupts(self, config: dict) -> list | None:
@@ -268,7 +302,7 @@ class VoiceAgent:
         if waiting:
             payload: Any = Command(resume={"text": text})       # la phrase est la réponse à la question posée
         else:
-            payload = {"messages": [HumanMessage(content=text)], "tainted": False, "decision": {}}
+            payload = {"messages": [HumanMessage(content=text)], "tainted": False, "decision": {}, "reviewed": []}
 
         turn = Turn(emit=emit)
         token = _TURN.set(turn)
@@ -289,9 +323,10 @@ class VoiceAgent:
             self._awaiting.add(thread_id)
             value = getattr(interrupts[0], "value", interrupts[0])
             question = value.get("question", "") if isinstance(value, dict) else str(value)
-            return TurnResult("confirm", question or "Tu confirmes ?", tools_used, timings)
+            await turn.send({"type": "node", "node": "waiting"})            # le schéma montre la pause
+            return TurnResult("confirm", question or "Tu confirmes ?", tools_used, timings, trace=turn.trace)
 
         last = messages[-1] if messages else None
         error = (getattr(last, "additional_kwargs", None) or {}).get("va_error", "")
         reply = clean_for_speech(text_of(last)) or "C'est fait."
-        return TurnResult("result", reply, tools_used, timings, error)
+        return TurnResult("result", reply, tools_used, timings, error, trace=turn.trace)

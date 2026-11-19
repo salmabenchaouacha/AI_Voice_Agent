@@ -26,15 +26,15 @@ def missing_key(spec: str | None = None) -> str | None:
     key = PROVIDER_KEYS.get(provider)
     return key if key and not os.getenv(key) else None
 
-
 def get_chat_model(spec: str | None = None):
     from langchain.chat_models import init_chat_model
     spec = spec or config.LLM
-    options = {"temperature": 0}              # mêmes décisions d'outils d'un essai à l'autre
+    options = {}
+    if not spec.startswith("google_genai:gemini-3"):
+        options["temperature"] = 0            # mêmes décisions d'outils d'un essai à l'autre (Gemini 3 fixe la sienne)
     if not spec.startswith("ollama:"):
         options["max_tokens"] = 500           # des réponses faites pour l'oral (Ollama n'a pas ce paramètre)
     return init_chat_model(spec, **options)
-
 
 _client = None
 

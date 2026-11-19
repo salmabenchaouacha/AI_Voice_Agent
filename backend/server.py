@@ -8,7 +8,8 @@ Messages envoyés au navigateur :
   {"type": "confirm", "heard", "reply"}                l'assistant demande un oui / non avant d'agir
   {"type": "result", "heard", "reply", "tools", …}     réponse finale
   {"type": "notification", "text"}                     événement spontané (fin d'un minuteur)
-  {"type": "state", "timers", "notes", "now"}          minuteurs en cours et dernières notes, après chaque réponse"""
+  {"type": "state", "timers", "notes", "audit", "now"} minuteurs, notes et actions sensibles, après chaque réponse
+  {"type": "node", "node"}                             nœud du graphe actif (agent, review, tools, waiting) : schéma animé"""
 import asyncio
 import io
 import json
@@ -25,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import actions
+import audit
 import metrics
 import notifier
 import skills  # noqa: F401  (enregistre les commandes du mode hors-ligne)
@@ -91,7 +93,7 @@ async def answer(heard: str, session: str, source: str, emit=None, stt_ms: int =
                "total_ms": stt_ms + round((time.perf_counter() - started) * 1000)}
     metrics.record({"mode": out["mode"], "type": out["type"], "source": source, "tools": out["tools"], **timings})
     return {"type": out["type"], "source": source, "heard": heard, "reply": out["reply"],
-            "tools": out["tools"], "mode": out["mode"], "timings": timings}
+            "tools": out["tools"], "mode": out["mode"], "timings": timings, "trace": out.get("trace", [])}
 
 
 def transcribe_bytes(data: bytes) -> str:
@@ -132,7 +134,7 @@ def get_status():
 def board_state() -> dict:
     """Ce que le panneau de l'interface affiche : minuteurs (avec leur heure de fin) et dernières notes."""
     return {"type": "state", "timers": actions.timers_snapshot(), "notes": actions.notes_snapshot(),
-            "now": round(time.time() * 1000)}
+            "audit": audit.recent(8), "now": round(time.time() * 1000)}
 
 
 @app.get("/api/state", dependencies=[Depends(require_origin)])

@@ -43,7 +43,9 @@ def test_assemblage_complet_avec_les_vrais_serveurs_mcp(tmp_path, monkeypatch):
     etat, note, contenu, question, encore_la, fin = asyncio.run(scenario())
     assert etat["mode"] == "agent" and etat["mcp_errors"] == {}
     assert len(etat["tools"]) == 18                                   # 13 outils MCP + 5 outils locaux
-    assert note == {"type": "result", "reply": "C'est noté.", "tools": ["note"], "mode": "agent", "timings": note["timings"]}
+    assert note == {"type": "result", "reply": "C'est noté.", "tools": ["note"], "mode": "agent",
+                    "timings": note["timings"], "trace": note["trace"]}
+    assert [e["kind"] for e in note["trace"]] == ["llm", "tool", "llm"]
     assert "appeler PROXYM" in contenu
     assert question["type"] == "confirm" and question["reply"] == "Je vais effacer toutes tes notes. Tu confirmes ?"
     assert encore_la                                                  # rien n'est effacé avant le oui
@@ -81,14 +83,20 @@ def test_websocket_etapes_confirmation_puis_resultat(monkeypatch):
     monkeypatch.setattr(server.assistant, "mode", "agent")
 
     with TestClient(server.app).websocket_connect("/ws?session=test-session-1", headers=ORIGINE) as ws:
+        def recevoir():                       # ignore le panneau et le schéma animé (testés à part)
+            while (message := ws.receive_json())["type"] in ("state", "node"):
+                pass
+            return message
+
         ws.send_text('{"type": "text", "text": "météo à Sousse"}')
-        etape, resultat = ws.receive_json(), ws.receive_json()
+        etape, resultat = recevoir(), recevoir()
         ws.send_text('{"type": "text", "text": "verrouille l\'écran"}')
-        question = ws.receive_json()
+        question = recevoir()
         ws.send_text('{"type": "text", "text": "oui"}')
-        etape_2, fin = ws.receive_json(), ws.receive_json()
+        etape_2, fin = recevoir(), recevoir()
 
     assert etape == {"type": "step", "tool": "get_weather", "label": "get_weather"}
+    assert [e["kind"] for e in resultat["trace"]] == ["llm", "tool", "llm"]
     assert resultat["type"] == "result" and resultat["reply"] == "Il fait 27 degrés à Sousse."
     assert resultat["tools"] == ["get_weather"] and resultat["mode"] == "agent" and "llm_ms" in resultat["timings"]
     assert question["type"] == "confirm" and question["reply"] == "Je vais verrouiller l'écran. Tu confirmes ?"
@@ -96,8 +104,37 @@ def test_websocket_etapes_confirmation_puis_resultat(monkeypatch):
     assert journal == [("get_weather", {"city": "Sousse"}), ("lock_screen", {})]
 
 
+def test_le_panneau_suit_les_minuteurs_et_les_notes(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "NOTES_FILE", str(tmp_path / "notes.txt"))
+    agent, _, _ = creer([ai("C'est fait.")])
+    monkeypatch.setattr(server.assistant, "agent", agent)
+    monkeypatch.setattr(server.assistant, "mode", "agent")
+    monkeypatch.setattr(server.actions, "timers_snapshot",
+                        lambda: [{"id": 1, "label": "pâtes", "end": 1_000_000, "seconds": 600}])
+    server.actions.add_note("réviser LangGraph")
+
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGINE) as ws:
+        ws.send_text('{"type": "text", "text": "lance un minuteur"}')
+        messages = [ws.receive_json() for _ in range(3)]          # nœud actif, réponse, état du panneau
+        resultat, etat = messages[-2], messages[-1]
+        assert messages[0] == {"type": "node", "node": "agent"}
+
+    assert resultat["type"] == "result" and etat["type"] == "state"
+    assert etat["timers"][0]["label"] == "pâtes" and etat["notes"][0]["text"] == "réviser LangGraph"
+    assert TestClient(server.app).get("/api/state").json()["notes"][0]["text"] == "réviser LangGraph"
+
+
 def test_etat_de_l_assistant_expose_par_l_api():
     client = TestClient(server.app)
     assert client.get("/api/status").json()["mode"] == "offline"
     assert client.get("/api/metrics").json() == {"demandes": 0}
     assert client.get("/api/status", headers={"Origin": "https://evil.example"}).status_code == 403
+
+
+def test_le_journal_des_actions_sensibles_est_dans_l_etat(tmp_path, monkeypatch):
+    import audit
+    monkeypatch.setattr(audit, "PATH", str(tmp_path / "audit.jsonl"))
+    audit.record([{"tool": "lock_screen", "label": "verrouillage", "action": "verrouiller l'écran",
+                   "reason": "action sensible", "outcome": "refusée"}])
+    etat = TestClient(server.app).get("/api/state").json()
+    assert etat["audit"][0]["outcome"] == "refusée" and etat["audit"][0]["t"] > 0

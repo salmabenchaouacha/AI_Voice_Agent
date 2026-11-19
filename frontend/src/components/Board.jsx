@@ -15,7 +15,10 @@ export function formatRemaining(ms) {
  * Le serveur envoie l'heure de fin de chaque minuteur ; le décompte se fait ici, sans requête.
  * `offset` corrige un éventuel écart entre l'horloge du serveur et celle du navigateur.
  */
-export default function Board({ timers, notes, offset = 0 }) {
+const OUTCOMES = { confirmée: 'ok', refusée: 'no', remplacée: 'warn' };
+const clock = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+export default function Board({ timers, notes, audit = [], offset = 0 }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -30,7 +33,7 @@ export default function Board({ timers, notes, offset = 0 }) {
     .map((t) => ({ ...t, left: t.end - serverNow }))
     .filter((t) => t.left > 0);
 
-  if (!running.length && !notes.length) return null;
+  if (!running.length && !notes.length && !audit.length) return null;
 
   return (
     <section className="board" aria-label="Minuteurs et notes">
@@ -47,6 +50,20 @@ export default function Board({ timers, notes, offset = 0 }) {
                 <span className="timer-bar" aria-hidden="true">
                   <span style={{ width: `${Math.min(100, (100 * t.left) / (t.seconds * 1000))}%` }} />
                 </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {audit.length > 0 && (
+        <div className="board-block">
+          <h2>Actions sensibles</h2>
+          <ul className="audit">
+            {audit.map((e, i) => (
+              <li key={`${e.t}-${i}`} className="audit-item">
+                <span className="audit-action">{e.action}</span>
+                <span className="audit-outcome" data-outcome={OUTCOMES[e.outcome] || 'warn'}>{e.outcome}</span>
+                <span className="audit-meta">{e.t ? clock(e.t) : ''} · {e.reason}</span>
               </li>
             ))}
           </ul>

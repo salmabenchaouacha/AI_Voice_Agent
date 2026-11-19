@@ -6,6 +6,7 @@ Deux modes, choisis une fois au démarrage :
 """
 import asyncio
 
+import audit
 import config
 import llm
 from router import QuitAssistant, dispatch
@@ -51,7 +52,7 @@ class Assistant:
             self.mcp.register_into(toolbox)
             self.agent = VoiceAgent(model, toolbox, facts=memory.facts, max_steps=config.MAX_STEPS,
                                     history_turns=config.HISTORY_TURNS, language=config.LANGUAGE,
-                                    city=config.DEFAULT_CITY)
+                                    city=config.DEFAULT_CITY, on_decision=audit.record)
             self.mode, self.reason = "agent", ""
         except Exception as e:      # bibliothèque absente, mcp.json invalide… : l'assistant reste utilisable
             await self.stop()
@@ -86,8 +87,7 @@ class Assistant:
                 error = turn.error
                 if not (error and not turn.tools):
                     return {"type": turn.kind, "reply": turn.reply, "tools": turn.tools, "mode": "agent",
-                            "timings": turn.timings, **({"error": error} if error else {})}
-            
+                            "timings": turn.timings, "trace": turn.trace, **({"error": error} if error else {})}
             # Le modèle n'a pas répondu et rien n'a été exécuté : la même phrase passe par les regex.
             print(f"Agent en échec, repli sur les regex : {error}")
             reply = await asyncio.to_thread(run_offline, text)

@@ -1,4 +1,7 @@
+"""Le graphe LangGraph, piloté par un faux modèle (tests/fakes.py) : aucun appel réseau, aucune clé d'API.
 
+On vérifie ce que le graphe fait des décisions du modèle : quels outils partent, dans quel ordre,
+lesquels attendent un oui, et ce que le modèle voit de la conversation."""
 import asyncio
 
 import pytest
@@ -58,7 +61,9 @@ def test_les_etapes_sont_diffusees_pendant_l_execution():
 
     agent, _, _ = creer([ai("", ("get_weather", {})), ai("Voilà.")])
     jouer(agent, "météo", emit=emit)
-    assert recus == [{"type": "step", "tool": "get_weather", "label": "get_weather"}]
+    assert [e for e in recus if e["type"] == "step"] == [{"type": "step", "tool": "get_weather", "label": "get_weather"}]
+    # le schéma animé suit le parcours du graphe : réflexion, validation, outils, réflexion
+    assert [e["node"] for e in recus if e["type"] == "node"] == ["agent", "review", "tools", "agent"]
 
 
 # ---------- confirmation orale (interrupt / reprise) ----------
@@ -149,7 +154,7 @@ def test_les_faits_retenus_sont_dans_le_prompt_systeme():
 
 # ---------- robustesse ----------
 def test_boucle_d_outils_arretee():
-    agent, _, journal = creer([ai("", ("get_weather", {})) for _ in range(5)], max_steps=2)
+    agent, _, journal = creer([ai("", ("get_weather", {}))] * 5, max_steps=2)
     (r,) = jouer(agent, "météo en boucle")
     assert r.reply == TOO_MANY_STEPS and len(journal) == 2
 
@@ -178,3 +183,45 @@ def test_un_appel_reste_sans_resultat_est_repare():
     fenetre = window([HumanMessage(content="un"), orphelin, HumanMessage(content="deux")], agent.toolbox, 8)
     assert [m.type for m in fenetre] == ["human", "ai", "tool", "human"]
     assert fenetre[2].content == INTERRUPTED and fenetre[2].tool_call_id == orphelin.tool_calls[0]["id"]
+
+
+# ---------- trace des étapes et journal des actions sensibles ----------
+def test_la_trace_detaille_chaque_etape():
+    agent, _, _ = creer([ai("", ("get_weather", {}), ("start_timer", {"seconds": 60})), ai("C'est fait.")])
+    (r,) = jouer(agent, "météo et minuteur")
+    assert [e["kind"] for e in r.trace] == ["llm", "tool", "tool", "llm"]
+    assert r.trace[0]["calls"] == ["get_weather", "start_timer"]
+    assert [e["status"] for e in r.trace if e["kind"] == "tool"] == ["ok", "ok"]
+    assert all(isinstance(e["ms"], int) for e in r.trace)
+
+
+def test_la_pause_de_confirmation_est_visible_et_journalisee():
+    journal, recus = [], []
+
+    async def emit(e):
+        recus.append(e)
+
+    agent, _, _ = creer([ai("", ("lock_screen", {})), ai("Écran verrouillé.")], on_decision=journal.extend)
+    question, fin = jouer(agent, "verrouille l'écran", "oui", emit=emit)
+    assert "waiting" in [e["node"] for e in recus if e["type"] == "node"]
+    assert journal == [{"tool": "lock_screen", "label": "lock_screen", "action": "verrouiller l'écran",
+                        "reason": "action sensible", "outcome": "confirmée"}]
+    assert {"kind": "review", "items": [{"label": "lock_screen", "outcome": "confirmée"}]} in fin.trace
+
+
+def test_refus_et_changement_d_avis_sont_journalises():
+    journal = []
+    agent, _, _ = creer([ai("", ("lock_screen", {})), ai("Annulé."),
+                         ai("", ("lock_screen", {})), ai("", ("start_timer", {"seconds": 60})), ai("Minuteur lancé.")],
+                        on_decision=journal.extend)
+    jouer(agent, "verrouille", "non", "verrouille", "non, mets plutôt un minuteur d'une minute")
+    assert [e["outcome"] for e in journal] == ["refusée", "remplacée"]
+
+
+def test_action_bloquee_apres_contenu_web_journalisee_avec_sa_raison():
+    journal = []
+    agent, _, _ = creer([ai("", ("web_search", {"query": "x"})), ai("", ("open_app", {"name": "evil"})), ai("Rien ouvert.")],
+                        on_decision=journal.extend)
+    jouer(agent, "cherche x", "non")
+    assert journal[0]["reason"] == "après contenu web" and journal[0]["action"] == "ouvrir evil"
+    assert journal[0]["outcome"] == "refusée"
