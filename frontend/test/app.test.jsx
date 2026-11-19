@@ -217,6 +217,21 @@ describe('Assistant vocal', () => {
     await waitFor(() => expect(screen.getByText('0 à faire')).toBeTruthy());
   });
 
+  it('voix : réponse en flux, puis mots incertains soulignés', async () => {
+    await connect();
+    fireEvent.click(screen.getByText('Quelle heure est-il ?'));
+    act(() => ws().serverSays({ type: 'delta', text: 'Il est ' }));
+    act(() => ws().serverSays({ type: 'delta', text: 'quinze heures' }));
+    expect(screen.getByText('Il est quinze heures')).toBeTruthy();
+    act(() => ws().serverSays({
+      type: 'result', source: 'voice', heard: 'météo à source', reply: 'Il fait 29 degrés à Sousse.', tools: [],
+      words: [{ w: 'météo', p: 0.95 }, { w: 'à', p: 0.9 }, { w: 'source', p: 0.38 }],
+    }));
+    expect(screen.queryByText('Il est quinze heures')).toBeNull();     // le brouillon laisse place à la réponse
+    expect(screen.getByText('source').tagName).toBe('MARK');
+    expect(screen.getByText(/Whisper n'en était pas sûr/)).toBeTruthy();
+  });
+
   it('serveur coupé : statut et reconnexion', async () => {
     await connect();
     act(() => ws().close());

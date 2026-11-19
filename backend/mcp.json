@@ -2,6 +2,7 @@
   "mcpServers": {
     "bureau": { "command": "python", "args": ["mcp_servers/desktop_server.py"] },
     "web":    { "command": "python", "args": ["mcp_servers/web_server.py"] },
-    "notes":  { "command": "python", "args": ["mcp_servers/notes_server.py"] }
+    "notes":  { "command": "python", "args": ["mcp_servers/notes_server.py"] },
+    "agenda": { "command": "python", "args": ["mcp_servers/calendar_server.py"], "enabled":true }
   }
 }

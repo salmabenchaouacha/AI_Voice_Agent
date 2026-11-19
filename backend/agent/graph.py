@@ -16,8 +16,9 @@ La boucle agent → review → tools recommence tant que le modèle demande des 
 L'état est sauvegardé après chaque nœud par le checkpointer, sous un identifiant de conversation (thread_id) :
 c'est à la fois la mémoire des échanges précédents et ce qui rend la pause possible.
 
-Pendant l'exécution, les nœuds diffusent des événements au navigateur (le nœud actif, pour le schéma animé)
-et notent chaque étape avec sa durée (la trace affichée sous la réponse).
+Pendant l'exécution, les nœuds diffusent des événements au navigateur (le nœud actif, pour le schéma animé ;
+les morceaux de la réponse au fur et à mesure qu'elle est générée) et notent chaque étape avec sa durée
+(la trace affichée sous la réponse).
 """
 import asyncio
 import contextvars
@@ -26,6 +27,13 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, Awaitable, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
+try:
+    from langchain_core.messages import message_chunk_to_message
+except ImportError:  # anciennes versions de langchain-core
+    def message_chunk_to_message(chunk):
+        return AIMessage(content=chunk.content, tool_calls=getattr(chunk, "tool_calls", []) or [],
+                         additional_kwargs=chunk.additional_kwargs, id=getattr(chunk, "id", None))
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
@@ -168,6 +176,24 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
     `on_decision(entrées)` : appelé à chaque réponse à une demande de confirmation (journal des actions sensibles)."""
     llm = model.bind_tools(toolbox.as_llm_tools()) if toolbox.specs() else model
 
+    async def generate(prompt: list, turn: Turn) -> AIMessage:
+        """Appel du modèle. Avec un navigateur à l'écoute, la réponse arrive en flux (astream) : chaque morceau de
+        texte part tout de suite ({"type": "delta"}), l'utilisateur voit la phrase s'écrire."""
+        if not (turn.emit and hasattr(llm, "astream")):
+            return await llm.ainvoke(prompt)
+        full = None
+        async for chunk in llm.astream(prompt):
+            full = chunk if full is None else full + chunk
+            content = getattr(chunk, "content", "")
+            piece = content if isinstance(content, str) else "".join(   # pas de strip : les espaces entre morceaux comptent
+                b if isinstance(b, str) else b.get("text", "") for b in content or []
+                if isinstance(b, str) or (isinstance(b, dict) and b.get("type") == "text"))
+            if piece and not getattr(full, "tool_call_chunks", None):
+                await turn.send({"type": "delta", "text": piece})
+        if full is None:
+            return AIMessage(content="")
+        return message_chunk_to_message(full)
+
     async def agent(state: State) -> dict:
         turn = _TURN.get() or Turn()
         messages = state["messages"]
@@ -177,7 +203,7 @@ def build_graph(model: Any, toolbox: Toolbox, *, facts: Callable[[], list[str]] 
         await turn.send({"type": "node", "node": "agent"})
         started = time.perf_counter()
         try:
-            reply = await asyncio.wait_for(llm.ainvoke(prompt), llm_timeout)
+            reply = await asyncio.wait_for(generate(prompt, turn), llm_timeout)
         except Exception as e:      # clé invalide, quota, réseau, délai dépassé : on termine proprement, sans planter le graphe
             print(f"Erreur du modèle : {type(e).__name__}: {e}")
             reply = AIMessage(content=LLM_DOWN, additional_kwargs={"va_error": f"{type(e).__name__}: {e}"[:300]})

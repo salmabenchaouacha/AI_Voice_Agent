@@ -5,6 +5,7 @@
  *   sources  résultats d'une recherche web, cliquables
  *   map      carte OpenStreetMap centrée sur un lieu
  *   image    miniature d'une capture d'écran
+ *   agenda   événements Google Agenda d'un jour (ou celui qui vient d'être ajouté)
  */
 const DAYS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
 
@@ -155,7 +156,29 @@ function ImageCard({ card }) {
   );
 }
 
-const KINDS = { weather: WeatherCard, sources: SourcesCard, map: MapCard, image: ImageCard };
+function AgendaCard({ card }) {
+  const events = Array.isArray(card.events) ? card.events : [];
+  return (
+    <section className="card card-agenda" aria-label={`Agenda : ${card.title}`}>
+      <h3>{card.added ? 'Ajouté à l\'agenda' : 'Agenda'}<span> · {card.title}</span></h3>
+      {events.length === 0 ? (
+        <p className="agenda-empty">Rien de prévu.</p>
+      ) : (
+        <ol>
+          {events.map((ev, i) => (
+            <li key={`${ev.time}-${i}`} data-added={!!card.added}>
+              <span className="agenda-time">{ev.allDay ? 'Journée' : ev.time}</span>
+              <span className="agenda-title">{ev.title}</span>
+              {!ev.allDay && ev.end && <span className="agenda-end">jusqu'à {ev.end}</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+const KINDS = { weather: WeatherCard, sources: SourcesCard, map: MapCard, image: ImageCard, agenda: AgendaCard };
 
 export default function Cards({ cards }) {
   const list = Array.isArray(cards) ? cards.filter((c) => c && KINDS[c.kind]) : [];

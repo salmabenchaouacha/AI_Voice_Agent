@@ -236,6 +236,17 @@ button, input, select { font: inherit; color: inherit; }
 .trace li[data-tone='error'] .trace-detail { color: var(--danger); }
 .trace li[data-tone='ok'] .trace-detail { color: var(--ok); }
 
+/* Voix : karaoké, mots incertains, réponse en flux */
+.kw { transition: color 0.12s; }
+.bot[data-speaking='true'] .kw[data-state='todo'] { color: var(--muted); }
+.bot[data-speaking='true'] .kw[data-state='now'] { color: var(--signal); }
+.unsure { padding: 0 1px; border-radius: 3px; background: transparent; color: inherit;
+  text-decoration: underline wavy var(--amber); text-decoration-thickness: 1.5px; text-underline-offset: 3px; cursor: help; }
+.unsure-hint { margin: 2px 0 0; color: var(--amber); font-size: 12px; }
+.msg[data-streaming='true'] .bot { color: var(--ink); }
+.caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.12em; background: var(--signal); animation: caret-blink 1s steps(2) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+
 /* Cartes visuelles sous une réponse : météo, sources, carte, capture */
 .cards { display: grid; gap: 10px; margin: 10px 0 2px; max-width: 100%; }
 .card { min-width: 0; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 12px; background: #fff; }
@@ -276,6 +287,14 @@ button, input, select { font: inherit; color: inherit; }
 .card-image img { display: block; width: 100%; max-height: 220px; object-fit: contain; border-radius: 6px; background: var(--paper); }
 .card-image p { margin: 6px 4px 0; color: var(--muted); font-size: 12px; }
 
+.card-agenda ol { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.card-agenda li { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 0 10px; padding-left: 10px; border-left: 3px solid var(--signal); }
+.card-agenda li[data-added='true'] { border-left-color: var(--ok); }
+.agenda-time { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+.agenda-title { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.agenda-end { grid-column: 2; color: var(--muted); font-size: 12px; }
+.agenda-empty { margin: 0; color: var(--muted); font-size: 14px; }
+
 .composer { display: flex; gap: 8px; padding: 14px 28px 22px; border-top: 1px solid var(--rule); }
 .composer input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; background: #fff; }
 .composer input::placeholder { color: var(--muted); }
@@ -294,4 +313,5 @@ button, input, select { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
   .graph-node[data-active='true'] rect { animation: none; }
+  .caret { animation: none; }
 }

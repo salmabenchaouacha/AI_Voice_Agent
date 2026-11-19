@@ -162,7 +162,8 @@ export default function App() {
       <aside className="side">
         <Board timers={a.board.timers} notes={a.board.notes} tasks={a.board.tasks} reminders={a.board.reminders}
           audit={a.board.audit} offset={a.board.offset} onToggleTask={a.toggleTask} />
-        <History messages={a.messages} locale={locale} onClear={a.clearHistory} />
+        <History messages={a.messages} locale={locale} onClear={a.clearHistory}
+          draft={a.draft} speaking={speech.progress} />
         <Composer disabled={!a.connected || busy} onSend={a.sendText} />
       </aside>
     </div>

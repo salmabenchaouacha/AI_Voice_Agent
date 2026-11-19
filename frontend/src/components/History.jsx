@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react';
 import Cards from './Cards.jsx';
+import { HeardWords, Karaoke, UNSURE } from './Spoken.jsx';
 import Trace from './Trace.jsx';
 
-export default function History({ messages, locale, onClear }) {
+export default function History({ messages, locale, onClear, draft = '', speaking = { id: null, char: -1 } }) {
   const box = useRef(null);
 
   useEffect(() => {
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [messages]);
+  }, [messages, draft]);
+
+  const charFor = (m) => (speaking?.id === m.id ? speaking.char : -1);
 
   const time = (iso) => new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 
@@ -30,7 +33,7 @@ export default function History({ messages, locale, onClear }) {
         {messages.map((m) => (
           <article key={m.id} className="msg" data-role={m.role}>
             {m.role === 'notice' ? (
-              <p className="notice">{m.text}</p>
+              <p className="notice"><Karaoke text={m.text} char={charFor(m)} /></p>
             ) : (
               <>
                 <div className="meta">
@@ -39,7 +42,14 @@ export default function History({ messages, locale, onClear }) {
                   </span>
                   <time dateTime={m.time}>{time(m.time)}</time>
                 </div>
-                <p className={m.role === 'user' ? 'you' : 'bot'}>{m.text}</p>
+                {m.role === 'user' ? (
+                  <p className="you">{m.words?.length ? <HeardWords words={m.words} /> : m.text}</p>
+                ) : (
+                  <p className="bot" data-speaking={charFor(m) >= 0}><Karaoke text={m.text} char={charFor(m)} /></p>
+                )}
+                {m.role === 'user' && m.words?.some((w) => w.p < UNSURE) && (
+                  <p className="unsure-hint">Mots soulignés : Whisper n'en était pas sûr.</p>
+                )}
                 {m.tools?.length > 0 && (
                   <p className="tools" aria-label="Outils utilisés">
                     {m.tools.map((t, i) => <span key={`${t}-${i}`} className="tool">{t}</span>)}
@@ -51,6 +61,12 @@ export default function History({ messages, locale, onClear }) {
             )}
           </article>
         ))}
+        {draft && (
+          <article className="msg" data-role="assistant" data-streaming="true">
+            <div className="meta"><span className="who-bot">Assistant</span></div>
+            <p className="bot">{draft}<span className="caret" aria-hidden="true" /></p>
+          </article>
+        )}
       </div>
     </section>
   );

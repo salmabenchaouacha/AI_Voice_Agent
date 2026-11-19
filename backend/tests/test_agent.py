@@ -239,3 +239,29 @@ def test_les_cartes_des_outils_arrivent_avec_la_reponse():
     assert r.cards == [{"kind": "map", "name": "Sousse"}]
     vu_par_le_modele = contenus(modele.vus[-1], "tool")
     assert vu_par_le_modele == ["Lieu trouvé : Sousse."]           # le JSON de la carte ne va jamais au modèle
+
+
+# ---------- réponse en flux (lot 4) ----------
+def test_la_reponse_arrive_en_flux_morceau_par_morceau():
+    import types
+    from langchain_core.messages import AIMessageChunk
+
+    agent, modele, journal = creer([
+        [AIMessageChunk(content="", tool_call_chunks=[{"name": "get_weather", "args": "{}", "id": "a1", "index": 0}])],
+        [AIMessageChunk(content="Il fait "), AIMessageChunk(content="27 degrés.")],
+    ])
+
+    async def astream(self, messages, **kwargs):
+        self.vus.append(list(messages))
+        for morceau in self.scenario.pop(0):
+            yield morceau
+    modele.astream = types.MethodType(astream, modele)
+
+    recus = []
+
+    async def emit(e):
+        recus.append(e)
+    (r,) = jouer(agent, "météo", emit=emit)
+    assert journal == [("get_weather", {})]                         # l'appel d'outil reconstitué depuis les morceaux
+    assert [e["text"] for e in recus if e["type"] == "delta"] == ["Il fait ", "27 degrés."]
+    assert r.reply == "Il fait 27 degrés."

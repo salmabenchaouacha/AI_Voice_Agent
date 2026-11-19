@@ -104,13 +104,14 @@ async def answer(heard: str, session: str, source: str, emit=None, stt_ms: int =
             "cards": out.get("cards", [])}
 
 
-def transcribe_bytes(data: bytes) -> str:
+def transcribe_bytes(data: bytes) -> tuple[str, list[dict]]:
+    """(texte entendu, mots avec leur probabilité)."""
     try:
-        from stt import transcribe
-        return transcribe(io.BytesIO(data))
+        from stt import transcribe_detailed
+        return transcribe_detailed(io.BytesIO(data))
     except Exception as e:
         print(f"Erreur de transcription : {e}")
-        return ""
+        return "", []
 
 
 class Command(BaseModel):
@@ -199,14 +200,15 @@ async def ws_endpoint(ws: WebSocket):
             if msg["type"] == "websocket.disconnect":
                 break
 
-            stt_ms = 0
+            stt_ms, words = 0, []
             if msg.get("bytes") is not None:                       # audio du micro
                 source, data = "voice", msg["bytes"]
                 if len(data) > MAX_AUDIO_BYTES:
                     heard = ""
                 else:
                     started = time.perf_counter()
-                    heard = await asyncio.to_thread(transcribe_bytes, data)
+                    out = await asyncio.to_thread(transcribe_bytes, data)
+                    heard, words = out if isinstance(out, tuple) else (out, [])
                     stt_ms = round((time.perf_counter() - started) * 1000)
             elif msg.get("text"):                                  # commande tapée
                 source = "text"
@@ -221,7 +223,10 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_json({"type": "result", "source": source, "heard": heard,
                                     "reply": "Je n'ai rien compris. Réessaie."})
                 continue
-            await ws.send_json(await answer(heard, session, source, emit=ws.send_json, stt_ms=stt_ms))
+            reply = await answer(heard, session, source, emit=ws.send_json, stt_ms=stt_ms)
+            if words:
+                reply["words"] = words                     # mots entendus et confiance de Whisper
+            await ws.send_json(reply)
             await ws.send_json(board_state())          # minuteur lancé, note ajoutée : le panneau suit
     except WebSocketDisconnect:
         pass

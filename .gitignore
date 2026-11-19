@@ -16,6 +16,7 @@ dist/
 # Local
 *.log
 .env
+backend/google_credentials.json
 backend/metrics.jsonl
 backend/eval/results.json
-eval/results.json
+eval/results.jsonbackend/client_secret*.json

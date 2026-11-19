@@ -13,6 +13,7 @@ LANGUAGE = os.getenv("VA_LANG", "fr")               # "fr", "en", "ar" : langue 
 
 WHISPER_MODEL = os.getenv("VA_MODEL", "small")      # tiny (rapide) / base / small (conseillé) / medium
 # Mots que Whisper doit s'attendre à entendre (villes, noms propres) : améliore nettement leur reconnaissance
+WORD_CONFIDENCE = os.getenv("VA_WORD_CONFIDENCE", "1") == "1"   # probabilité de chaque mot (mots incertains soulignés)
 WHISPER_PROMPT = os.getenv("VA_WHISPER_PROMPT", "Sousse, Tunis, Monastir, Sfax, Nabeul, Toulouse, Orléans. Météo, minuteur, note, YouTube, LangGraph.")
 DEFAULT_CITY = os.getenv("VA_CITY", "Tunis")        # ville par défaut pour la météo
 NOTES_FILE = os.path.expanduser(os.getenv("VA_NOTES", "~/assistant_notes.txt"))
@@ -24,6 +25,9 @@ REMINDERS_FILE = os.path.expanduser(os.getenv("VA_REMINDERS", "~/assistant_remin
 AGENT_MODE = os.getenv("VA_AGENT", "auto").lower()
 # Format "fournisseur:modèle" compris par LangChain : anthropic:…, openai:…, google_genai:…, ollama:…
 LLM = os.getenv("VA_LLM", "anthropic:claude-haiku-4-5-20251001")
+# Google Agenda (serveur MCP « agenda », désactivé tant que le compte n'est pas connecté)
+GOOGLE_CREDENTIALS = os.getenv("VA_GOOGLE_CREDENTIALS", str(BASE_DIR / "google_credentials.json"))
+GOOGLE_TOKEN = os.path.expanduser(os.getenv("VA_GOOGLE_TOKEN", "~/.assistant_google_token.json"))
 MCP_CONFIG = os.getenv("VA_MCP_CONFIG", str(BASE_DIR / "mcp.json"))
 MEMORY_FILE = os.path.expanduser(os.getenv("VA_MEMORY", "~/assistant_memory.json"))
 METRICS_FILE = os.path.expanduser(os.getenv("VA_METRICS", str(BASE_DIR / "metrics.jsonl")))   # vide = pas de mesures

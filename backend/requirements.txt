@@ -14,4 +14,8 @@ langchain-anthropic        # fournisseur par défaut ; pour un autre : langchain
 mcp>=2.0,<3                # SDK MCP officiel, API v2 (MCPServer, Client)
 ddgs                       # recherche web sans clé d'API
 
+# Google Agenda (facultatif : serveur MCP « agenda », voir le README)
+google-api-python-client
+google-auth-oauthlib
+
 anthropic                  # ancien repli du mode hors-ligne (llm.ask_llm)

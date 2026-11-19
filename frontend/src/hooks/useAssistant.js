@@ -55,6 +55,7 @@ export function useAssistant({ speak, stopSpeaking }) {
   const [pending, setPending] = useState(false);  // l'assistant attend un oui ou un non
   const [board, setBoard] = useState({ timers: [], notes: [], tasks: [], reminders: [], audit: [], offset: 0 });  // panneau de droite
   const [node, setNode] = useState('');           // nœud du graphe actif : agent, review, tools, waiting
+  const [draft, setDraft] = useState('');         // réponse en train de s'écrire (morceaux reçus en flux)
 
   const wsRef = useRef(null);
   const analyserRef = useRef(null);   // lu par l'orbe pour l'animation
@@ -83,18 +84,24 @@ export function useAssistant({ speak, stopSpeaking }) {
   handlerRef.current = (data) => {
     if (data.type === 'result' || data.type === 'confirm') {
       clearTimeout(replyTimer.current);
-      if (data.source === 'voice' && data.heard) add(mk('user', data.heard, { via: 'voice' }));
+      if (data.source === 'voice' && data.heard) {
+        add(mk('user', data.heard, { via: 'voice', ...(data.words?.length ? { words: data.words } : {}) }));
+      }
       const extra = {};
       if (data.tools?.length) extra.tools = data.tools;
       if (data.trace?.length) extra.trace = data.trace;
       if (data.cards?.length) extra.cards = data.cards;    // météo, sources, carte, capture
       if (data.type === 'confirm') extra.confirm = true;
-      add(mk('assistant', data.reply, extra));
+      const msg = mk('assistant', data.reply, extra);
+      add(msg);
+      setDraft('');
       setPending(data.type === 'confirm');
       setNode(data.type === 'confirm' ? 'waiting' : '');
       setActivity('');
       setStatus('idle');
-      speak(data.reply);
+      speak(data.reply, msg.id);
+    } else if (data.type === 'delta') {
+      setDraft((d) => d + (data.text || ''));
     } else if (data.type === 'state') {
       setBoard({
         timers: Array.isArray(data.timers) ? data.timers : [],
@@ -106,12 +113,14 @@ export function useAssistant({ speak, stopSpeaking }) {
       });
     } else if (data.type === 'node') {
       setNode(data.node || '');
+      if (data.node === 'review' || data.node === 'tools') setDraft('');   // ce texte précédait un appel d'outil
     } else if (data.type === 'step') {
       setActivity(data.label || data.tool || '');
       if (statusRef.current === 'thinking') armReplyTimeout();   // l'agent travaille : on lui laisse du temps
     } else if (data.type === 'notification') {
-      add(mk('notice', data.text));
-      speak(data.text);
+      const msg = mk('notice', data.text);
+      add(msg);
+      speak(data.text, msg.id);
     }
   };
 
@@ -142,6 +151,7 @@ export function useAssistant({ speak, stopSpeaking }) {
           setStatus('idle');
           setActivity('');
           setNode('');
+          setDraft('');
           setError('Connexion perdue pendant la réponse. Réessaie.');
         }
         if (!stopped) retry = setTimeout(connect, 1500);
@@ -269,7 +279,7 @@ export function useAssistant({ speak, stopSpeaking }) {
   }, []);
 
   return {
-    connected, status, messages, error, analyserRef, activity, pending, board, node,
+    connected, status, messages, error, analyserRef, activity, pending, board, node, draft,
     sendText, toggleListening, cancelListening, clearHistory, dismissError, toggleTask,
   };
 }

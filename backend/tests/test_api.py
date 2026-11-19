@@ -86,3 +86,12 @@ def test_cocher_une_tache_depuis_le_panneau(client):
     assert etat["type"] == "state" and etat["tasks"][0] == {"id": 1, "text": "Réviser le RAG", "done": True}
     assert client.post("/api/tasks/999/toggle").status_code == 404
     assert "reminders" in client.get("/api/state").json()
+
+
+def test_ws_audio_avec_la_confiance_de_chaque_mot(client, monkeypatch):
+    mots = [{"w": "quelle", "p": 0.97}, {"w": "heure", "p": 0.41}, {"w": "est-il", "p": 0.9}]
+    monkeypatch.setattr(server, "transcribe_bytes", lambda data: ("quelle heure est-il", mots))
+    with client.websocket_connect("/ws", headers=ORIGINE_OK) as ws:
+        ws.send_bytes(b"\x00\x01")
+        data = ws.receive_json()
+    assert data["heard"] == "quelle heure est-il" and data["words"] == mots
